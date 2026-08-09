@@ -1,0 +1,8 @@
+go 1.18
+
+use (
+	./backend
+	./protocol
+	./sdk-go
+	./simple-did
+)

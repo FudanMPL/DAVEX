@@ -1,0 +1,90 @@
+openapi: 3.0.3
+info:
+  title: Gov-DID Judicial Collaboration Backend API
+  version: 1.0.0
+  description: 第五章六个后端模块的核心 REST 契约；支撑接口以实际 Router 为准。
+servers:
+  - url: http://localhost:8081
+security:
+  - bearerAuth: []
+paths:
+  /api/system/session:
+    get:
+      summary: 获取登录账号、管理员权限与当前链上执行主体
+      parameters: [{$ref: '#/components/parameters/ActorAlias'}]
+      responses: {'200': {$ref: '#/components/responses/Success'}}
+  /api/did/generateDID:
+    post: {summary: 本地生成 DID 文档与协议密钥, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/did/registerDID:
+    post: {summary: 将 DID 哈希与公钥锚定上链, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/did/query:
+    get:
+      summary: 查询 DID 注册状态
+      parameters: [{$ref: '#/components/parameters/DID'}]
+      responses: {'200': {$ref: '#/components/responses/Success'}}
+  /api/vc/issue:
+    post: {summary: 签发完整 VC 并登记 VCProof, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/vp/verify:
+    post: {summary: 验证身份、凭证、一次性 nonce 与权限语义, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/vp/verifyPolicy:
+    post: {summary: 验证六元组权限的 Merkle 成员证明, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/privacy/group/create:
+    post: {summary: 根据策略资格创建匿名认证群组, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/privacy/group/member:
+    post: {summary: 将 VC、持有者与 LSAG 公钥绑定入群, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/privacy/group:
+    get:
+      summary: 查询当前群组锚与成员公钥
+      parameters: [{$ref: '#/components/parameters/GroupID'}]
+      responses: {'200': {$ref: '#/components/responses/Success'}}
+  /api/privacy/vp/generate:
+    post: {summary: 基于当前 LHash 和 timeSlot 生成 DID-LSAG 隐私 VP, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/privacy/vp/verify:
+    post: {summary: 链上验证隐私 VP 并原子消费 nonce 与 I_ctx, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/privacy/keyimage:
+    post: {summary: 计算上下文化密钥映像, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/issuer/register:
+    post: {summary: 登记撤销事件法定签发方, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/committee/create:
+    post: {summary: 创建 t-of-n 撤销委员会, responses: {'201': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/committee/member:
+    post: {summary: 添加或更新委员会成员, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/threshold/update:
+    post: {summary: 更新委员会门限, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/execute:
+    post: {summary: 使用独立批准集执行原子撤销, responses: {'200': {$ref: '#/components/responses/Success'}}}
+  /api/revocation/logs:
+    get:
+      summary: 查询凭证撤销日志和最终状态
+      parameters: [{$ref: '#/components/parameters/VCID'}]
+      responses: {'200': {$ref: '#/components/responses/Success'}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    ActorAlias: {name: X-Actor-Alias, in: header, required: false, description: 仅管理员可指定的已配置链上执行主体, schema: {type: string}}
+    DID: {name: did, in: query, required: true, schema: {type: string}}
+    GroupID: {name: groupID, in: query, required: true, schema: {type: string}}
+    VCID: {name: vcID, in: query, required: true, schema: {type: string}}
+  responses:
+    Success:
+      description: 统一成功响应
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+  schemas:
+    Envelope:
+      type: object
+      required: [code, message, data, requestId]
+      properties:
+        code: {type: string, example: OK}
+        message: {type: string, example: success}
+        data: {type: object, additionalProperties: true}
+        requestId: {type: string}
+        tx:
+          type: object
+          properties:
+            txId: {type: string}
+            blockHeight: {type: integer, format: int64}
+            gasUsed: {type: integer, format: int64}

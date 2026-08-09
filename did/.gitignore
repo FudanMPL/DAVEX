@@ -1,0 +1,12 @@
+backend/configs/backend.yml
+backend/data/
+backend/did-backend
+/server
+backend/sdk.log*
+sdk-go/configs/sdk_config*.yml
+!sdk-go/configs/sdk_config.example.yml
+sdk-go/configs/crypto-config/
+sdk-go/data/
+sdk-go/sdk.log*
+simple-did/simpleDid
+*.7z

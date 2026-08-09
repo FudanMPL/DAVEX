@@ -13,5 +13,6 @@ DAVEX_agent/read.md
 DAVEX_base/read.md
 DAVEX_center/read.md
 /AGENTS.md
-/contracts/
+/contracts/*
+!/contracts/did-http.md
 /.agents/

@@ -1,0 +1,31 @@
+server:
+  address: ":8081"
+  read_timeout_seconds: 15
+  write_timeout_seconds: 30
+  shutdown_timeout_seconds: 10
+  allowed_origins:
+    - "http://localhost:5173"
+
+chain:
+  contract_name: "simpleDidTest1"
+  timeout: -1
+
+storage:
+  state_path: "../data/backend-state.json"
+  audit_path: "../data/audit.jsonl"
+
+# token_sha256 = SHA-256(token) 的十六进制值。示例只放占位符，不保存明文 token。
+# 每个需要独立执行链上交易的主体都必须使用独立 ChainMaker SDK 身份。
+actors:
+  - alias: "bootstrap"
+    did: ""
+    admin: true
+    sdk_config_path: "../../sdk-go/configs/sdk_config.yml"
+    sdk_working_dir: "../../sdk-go"
+    token_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  - alias: "governance"
+    did: "did:gov:governance"
+    admin: false
+    sdk_config_path: "../../sdk-go/configs/sdk_config.yml"
+    sdk_working_dir: "../../sdk-go"
+    token_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

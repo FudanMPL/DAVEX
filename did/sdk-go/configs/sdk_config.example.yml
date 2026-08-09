@@ -1,0 +1,19 @@
+chain_client:
+  chain_id: <chain-id>
+  org_id: <organization-id>
+  user_key_file_path: configs/crypto-config/<org>/user/<user>/<user>.tls.key
+  user_crt_file_path: configs/crypto-config/<org>/user/<user>/<user>.tls.crt
+  user_sign_key_file_path: configs/crypto-config/<org>/user/<user>/<user>.sign.key
+  user_sign_crt_file_path: configs/crypto-config/<org>/user/<user>/<user>.sign.crt
+  retry_limit: 10
+  retry_interval: 500
+  nodes:
+    - node_addr: <host:port>
+      conn_cnt: 10
+      enable_tls: true
+      trust_root_paths:
+        - configs/crypto-config/<org>/ca
+      tls_host_name: chainmaker.org
+  rpc_client:
+    max_receive_message_size: 100
+    max_send_message_size: 100

@@ -7,8 +7,7 @@ import {
   Message,
   MessageBox,
   Promotion,
-  User,
-  UserFilled
+  Connection
 } from "@element-plus/icons-vue";
 </script>
 
@@ -38,6 +37,10 @@ import {
           <el-menu-item index="/user/operationHistory">
             <el-icon><Message /></el-icon>
             <span class="centered-text">历史记录</span>
+          </el-menu-item>
+          <el-menu-item index="/did">
+            <el-icon><Connection /></el-icon>
+            <span class="centered-text">DID系统</span>
           </el-menu-item>
           <el-sub-menu index="/dve">
             <template #title>
@@ -123,32 +126,6 @@ import {
             <el-menu-item index="/verdictResult/query">
               <el-icon><Document /></el-icon>
               <span class="centered-text">隐私保护类案查询</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="/auth">
-            <template #title>
-              <el-icon><UserFilled /></el-icon>
-              <span class="centered-text">认证管理</span>
-            </template>
-            <!-- <el-menu-item index="/auth/tokens">
-              <el-icon><EditPen /></el-icon>
-              <span class="centered-text">Token管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/userManagement">
-              <el-icon><EditPen /></el-icon>
-              <span class="centered-text">认证服务用户管理</span>
-            </el-menu-item> -->
-            <el-menu-item index="/auth/didManagement">
-              <el-icon><Key /></el-icon>
-              <span class="centered-text">DID管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/vcManagement">
-              <el-icon><Stamp /></el-icon>
-              <span class="centered-text">凭证管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/privacyVpManagement">
-              <el-icon><Lock /></el-icon>
-              <span class="centered-text">隐私保护凭证管理</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

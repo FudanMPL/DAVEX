@@ -110,6 +110,11 @@ const router = createRouter({
           component: () => import('@/views/user/operationHistory.vue'),
         },
         {
+          path: 'did',
+          name: 'didWorkspace',
+          component: () => import('@/views/did/didWorkspace.vue'),
+        },
+        {
           path: 'verdict/transfer',
           component: () => import('@/views/verdict/transfer.vue'),
         },
