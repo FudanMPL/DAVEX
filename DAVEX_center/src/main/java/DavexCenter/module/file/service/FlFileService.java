@@ -14,6 +14,8 @@ import DavexCenter.entity.ComparisonOutput;
 import DavexCenter.entity.Output;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -128,6 +130,20 @@ public class FlFileService {
             return Body.error(String.format("获取失败: 结果id %d，文件名: %s，错误信息: %s", outputId, fileName, e.getMessage()));
         }
         return Body.success(String.format("获取成功，结果id: %d，文件名: %s，保存路径: %s", outputId, fileName, newDownloadTask.getPath()));
+    }
+
+    public ResponseEntity<?> fetchFlByHttp(Long outputId, String applicationId) {
+        LambdaQueryWrapper<FlOutput> queryWrapper = Wrappers.<FlOutput>lambdaQuery()
+                .eq(FlOutput::getUid, outputId)
+                .eq(FlOutput::getApplicationId, applicationId);
+        FlOutput output = flOutputMapper.selectOne(queryWrapper);
+        if (output == null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("找不到该文件，结果id: %d", outputId)));
+        }
+        return fileService.fetchStoredFileByHttp(outputId, applicationId, output.getPath(), output.getName(),
+                output.getExpiredTime(), "fl");
     }
 
     public Body<List<FlOutput>> queryFl(String applicationId) {

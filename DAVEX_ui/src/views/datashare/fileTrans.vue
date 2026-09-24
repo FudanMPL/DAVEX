@@ -73,10 +73,13 @@
           ></el-table-column>
           <el-table-column
               label="所属代理"
-              prop="agentId"
               width="200"
               align="center"
-          ></el-table-column>
+          >
+            <template #default="scope">
+              {{ getAgentName(scope.row.agentId) }}
+            </template>
+          </el-table-column>
 
           <el-table-column
               label="类型"
@@ -101,7 +104,7 @@
           <el-table-column
               fixed="right"
               label="操作"
-              mid-width="300"
+              min-width="200"
               header-align="center"
               align="center"
           >
@@ -109,15 +112,11 @@
               <el-button
                   class="small-default-button"
                   v-if="scope.row.type === 'file'"
-                  @click="
-                  getFileMethod(
-                    scope.row.uid,
-                    scope.row.agentId,
-                    scope.row.parentId
-                  )
-                "
+                  :loading="transferringFileId === scope.row.uid"
+                  :disabled="Boolean(transferringFileId)"
+                  @click="getFileMethod(scope.row)"
               >
-                <el-icon><Download /></el-icon> 获取文件
+                <el-icon><Download /></el-icon> 传输文件
               </el-button>
 <!--              <el-button-->
 <!--                  v-if="scope.row.type === 'file' && !isAccessible(scope.row.ruleList)"-->
@@ -134,15 +133,41 @@
       </div>
 
       <el-dialog v-model="transSuccessVisible" title="文件传输结果" width="30%">
-        <span>文件传输完成</span>
+        <div>文件传输完成，文件已保存到结果管理区。</div>
+        <div v-if="downloadErrorMessage" class="download-error">
+          {{ downloadErrorMessage }}
+        </div>
         <template #footer>
           <div class="dialog-footer">
-            <el-button class="close-button" @click="transSuccessVisible = false" style="margin-right: 10px;">返回</el-button>
-            <router-link to="/result/fileTrans">
-              <el-button class="default-button">
-                  查看结果管理区
-              </el-button>
-            </router-link>
+            <el-button
+                class="default-button"
+                :loading="previewLoading"
+                :disabled="downloadLoading"
+                @click="previewTransferredFile"
+            >
+              <el-icon><View /></el-icon> 文件预览
+            </el-button>
+            <el-button
+                class="default-button"
+                :loading="downloadLoading"
+                :disabled="previewLoading"
+                @click="downloadTransferredFile"
+            >
+              立即下载
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
+      <el-dialog
+          v-model="previewVisible"
+          title="文件预览"
+          width="70%"
+          append-to-body
+      >
+        <pre class="file-preview-content">{{ previewContent }}</pre>
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button class="close-button" @click="previewVisible = false">关闭</el-button>
           </div>
         </template>
       </el-dialog>
@@ -161,9 +186,10 @@
 <script lang="ts" setup>
 import {getAgent} from '../../api/testDve.js'
 import {getDirectory, getRootByAgent} from '../../api/folderController.js'
-import {getFile} from "../../api/direct.js";
+import {fetchFileByHttp, getFile, getResult, readFile} from "../../api/direct.js";
 import {onMounted, ref} from "vue";
-import {Download} from "@element-plus/icons-vue";
+import {Download, View} from "@element-plus/icons-vue";
+import {ElLoading, ElMessage} from "element-plus";
 
 onMounted(() => {
   getAgentMethod()
@@ -174,6 +200,14 @@ onMounted(() => {
 const transSuccessVisible = ref(false)
 const transFailedVisible = ref(false)
 const transFailedMessage = ref('');
+const transferringFileId = ref('')
+const downloadLoading = ref(false)
+const previewLoading = ref(false)
+const previewVisible = ref(false)
+const previewContent = ref('')
+const downloadErrorMessage = ref('')
+const transferredFile = ref(null)
+const transferredOutputId = ref(null)
 
 const agents = ref([])
 const agentId = ref('')
@@ -215,23 +249,209 @@ const getDirectoryMethod = async () => {
   }
 }
 
-const getFileMethod = async (uid, agentId, folderId) => {
+const locateTransferredOutput = async (fileInfo) => {
+  const res = await getResult({applicationId})
+  const outputs = Array.isArray(res.data?.data) ? res.data.data : []
+  const matches = outputs
+      .filter(item => item.fileId === fileInfo.uid && item.agentId === fileInfo.agentId)
+      .sort((first, second) => Number(second.uploadDate || 0) - Number(first.uploadDate || 0))
+  return matches[0]?.uid ?? null
+}
+
+const getErrorMessage = (error, fallback) => {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
+const getFileMethod = async (fileInfo) => {
+  if (transferringFileId.value) return
+
+  const loadingInstance = ElLoading.service({
+    lock: true,
+    text: '文件传输中，请稍候……',
+    background: 'rgba(0, 0, 0, 0.35)',
+  })
+
+  transferringFileId.value = fileInfo.uid
+  transferredFile.value = fileInfo
+  transferredOutputId.value = null
+  previewVisible.value = false
+  previewContent.value = ''
+  downloadErrorMessage.value = ''
+  transFailedVisible.value = false
+
   try {
-    getFileBody.value.fileId = uid
-    getFileBody.value.agentId = agentId
-    getFileBody.value.folderId = folderId
-    console.log(getFileBody.value)
+    getFileBody.value.fileId = fileInfo.uid
+    getFileBody.value.agentId = fileInfo.agentId
+    getFileBody.value.folderId = fileInfo.parentId
     const res = await getFile(getFileBody.value)
     if (res.data.code == 1) {
+      try {
+        transferredOutputId.value = await locateTransferredOutput(fileInfo)
+        if (transferredOutputId.value === null) {
+          downloadErrorMessage.value = '暂未定位到传输结果，请稍后在结果管理区下载。'
+        }
+      }
+      catch (error) {
+        console.error('Failed to locate transferred output:', error)
+        downloadErrorMessage.value = '暂未定位到传输结果，请稍后在结果管理区下载。'
+      }
       transSuccessVisible.value = true
     }
     else {
-      transFailedMessage.value = res.data.message;
+      transFailedMessage.value = res.data.message || '文件传输失败';
       transFailedVisible.value = true
     }
   }
   catch (error) {
     console.error('Failed to get file:', error)
+    transFailedMessage.value = getErrorMessage(error, '文件传输失败，请稍后重试。')
+    transFailedVisible.value = true
+  }
+  finally {
+    transferringFileId.value = ''
+    loadingInstance.close()
+  }
+}
+
+const getDownloadFileName = (contentDisposition, fallbackName) => {
+  if (!contentDisposition) return fallbackName
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+  const encodedName = utf8Match?.[1] || normalMatch?.[1]
+  if (!encodedName) return fallbackName
+
+  try {
+    return decodeURIComponent(encodedName)
+  }
+  catch (error) {
+    return encodedName
+  }
+}
+
+const decodeTextFile = async (fileBlob) => {
+  const fileBuffer = await fileBlob.arrayBuffer()
+  try {
+    return new TextDecoder('utf-8', {fatal: true}).decode(fileBuffer).replace(/^\uFEFF/, '')
+  }
+  catch (error) {
+    return new TextDecoder('gb18030').decode(fileBuffer).replace(/^\uFEFF/, '')
+  }
+}
+
+const previewTextFile = async () => {
+  const res = await fetchFileByHttp({
+    outputId: transferredOutputId.value,
+    applicationId,
+  })
+  const contentType = res.headers?.['content-type'] || ''
+  if (contentType.includes('application/json')) {
+    const responseText = await res.data.text()
+    let message = '文件预览失败，请稍后重试。'
+    try {
+      message = JSON.parse(responseText)?.message || message
+    }
+    catch (error) {
+      if (responseText) message = responseText
+    }
+    throw new Error(message)
+  }
+
+  return decodeTextFile(res.data)
+}
+
+const previewTransferredFile = async () => {
+  if (previewLoading.value) return
+
+  if (transferredOutputId.value === null) {
+    downloadErrorMessage.value = '暂未定位到传输结果，请稍后在结果管理区预览。'
+    ElMessage.warning(downloadErrorMessage.value)
+    return
+  }
+
+  previewLoading.value = true
+  downloadErrorMessage.value = ''
+  try {
+    const fileName = transferredFile.value?.name || ''
+    const extension = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : ''
+    if (['txt', 'text', 'csv'].includes(extension)) {
+      previewContent.value = await previewTextFile()
+    }
+    else {
+      const res = await readFile({
+        outputId: transferredOutputId.value,
+        applicationId,
+      })
+      if (res.data?.code !== 1) {
+        throw new Error(res.data?.message || '文件预览失败，请稍后重试。')
+      }
+      previewContent.value = String(res.data?.data ?? '')
+    }
+
+    previewVisible.value = true
+  }
+  catch (error) {
+    console.error('Failed to preview file:', error)
+    downloadErrorMessage.value = getErrorMessage(error, '文件预览失败，请稍后重试。')
+    ElMessage.error(downloadErrorMessage.value)
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
+const downloadTransferredFile = async () => {
+  if (downloadLoading.value) return
+
+  if (transferredOutputId.value === null) {
+    downloadErrorMessage.value = '暂未定位到传输结果，请稍后在结果管理区下载。'
+    ElMessage.warning(downloadErrorMessage.value)
+    return
+  }
+
+  downloadLoading.value = true
+  downloadErrorMessage.value = ''
+  try {
+    const res = await fetchFileByHttp({
+      outputId: transferredOutputId.value,
+      applicationId,
+    })
+    const contentType = res.headers?.['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const responseText = await res.data.text()
+      let message = '下载失败，请稍后重试。'
+      try {
+        message = JSON.parse(responseText)?.message || message
+      }
+      catch (error) {
+        if (responseText) message = responseText
+      }
+      throw new Error(message)
+    }
+
+    const fileName = getDownloadFileName(
+        res.headers?.['content-disposition'],
+        transferredFile.value?.name || 'download'
+    )
+    const objectUrl = URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(objectUrl)
+
+    transSuccessVisible.value = false
+    ElMessage.success('文件下载已开始')
+  }
+  catch (error) {
+    console.error('Failed to download file:', error)
+    downloadErrorMessage.value = getErrorMessage(error, '下载失败，请稍后重试。')
+    ElMessage.error(downloadErrorMessage.value)
+  }
+  finally {
+    downloadLoading.value = false
   }
 }
 
@@ -296,8 +516,12 @@ const getAgentMethod = async () => {
   const res = await getAgent()
   agents.value = res.data.body.data.map(item => ({
     value: item.uid,
-    label: item.uid
+    label: item.name || item.uid
   }))
+}
+
+const getAgentName = (currentAgentId) => {
+  return agents.value.find(item => item.value === currentAgentId)?.label || currentAgentId
 }
 
 const handleSelectAgent = async (value) => {
@@ -307,4 +531,24 @@ const handleSelectAgent = async (value) => {
 }
 </script>
 
-<style scoped></style>
+<style scoped>
+.download-error {
+  margin-top: 12px;
+  color: var(--el-color-danger);
+}
+
+.file-preview-content {
+  box-sizing: border-box;
+  max-height: 60vh;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  font-family: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+</style>

@@ -81,7 +81,7 @@
           <el-table-column
               fixed="right"
               label="操作"
-              mid-width="300"
+              min-width="200"
               header-align="center"
               align="center"
           >
@@ -240,14 +240,18 @@
 
   <el-dialog v-model="compareSuccessVisible" title="比对完成" width="30%">
     <span>{{ compareSuccessMessage }}</span>
+    <div v-if="comparisonDownloadError" class="download-error">
+      {{ comparisonDownloadError }}
+    </div>
     <template #footer>
       <div class="dialog-footer">
-        <el-button class="close-button" @click="compareSuccessVisible = false" style="margin-right: 10px;">返回</el-button>
-        <router-link to="/result/comPare">
-          <el-button class="default-button">
-            查看结果管理区
-          </el-button>
-        </router-link>
+        <el-button
+            class="default-button"
+            :loading="comparisonDownloadLoading"
+            @click="downloadComparisonResult"
+        >
+          <el-icon><Download /></el-icon> 立即下载
+        </el-button>
       </div>
     </template>
   </el-dialog>
@@ -344,10 +348,20 @@
 <script lang="ts" setup>
 import {getAgent} from '../../api/testDve.js'
 import {getDirectory, getRootByAgent} from '../../api/folderController.js'
-import {getTableHeader, compareFromCsv, compare, getTXTExample, compareFromTXT, compareTXT} from "../../api/comparison.js";
+import {
+  getTableHeader,
+  compareFromCsv,
+  compare,
+  getTXTExample,
+  compareFromTXT,
+  compareTXT,
+  getComparisonResult,
+  fetchComparisonByHttp,
+} from "../../api/comparison.js";
 import {onMounted, ref} from "vue";
-import {genFileId, UploadInstance, UploadProps, UploadRawFile} from "element-plus";
+import {ElMessage, genFileId, UploadInstance, UploadProps, UploadRawFile} from "element-plus";
 import {Delete, Download, Tickets} from "@element-plus/icons-vue";
+import {downloadFileResponse} from "../../utils/resultFile.js";
 
 onMounted(() => {
   getAgentMethod()
@@ -359,6 +373,9 @@ const compareSuccessVisible = ref(false)
 const compareFailedVisible = ref(false)
 const compareSuccessMessage = ref('');
 const compareFailedMessage = ref('');
+const comparisonOutput = ref(null)
+const comparisonDownloadLoading = ref(false)
+const comparisonDownloadError = ref('')
 const selectAttributesVisible = ref(false)
 const inputDataVisible = ref(false)
 const inputTextDataVisible = ref(false)
@@ -423,6 +440,62 @@ const compareTXTBody = ref({
 const fileName = ref('')
 const upload = ref<UploadInstance>()
 
+const locateComparisonOutput = async () => {
+  const selectedAgentId = getTableHeaderBody.value.agentId || getTXTExampleBody.value.agentId
+  const selectedFileId = getTableHeaderBody.value.fileId || getTXTExampleBody.value.fileId
+  const res = await getComparisonResult({applicationId})
+  const outputs = Array.isArray(res.data?.data) ? res.data.data : []
+  return outputs
+      .filter(item => item.agentId === selectedAgentId && item.fileId === selectedFileId)
+      .sort((first, second) => new Date(second.uploadDate || 0).getTime() - new Date(first.uploadDate || 0).getTime())[0] || null
+}
+
+const showComparisonSuccess = async (response, fallbackMessage) => {
+  const booleanArray = Array.isArray(response.data?.data) ? response.data.data : []
+  const resultList = booleanArray
+      .map((result, index) => `${index + 1}. ${result ? 'True' : 'False'}`)
+      .join('; ')
+  compareSuccessMessage.value = resultList ? `比对结果依次为: ${resultList}` : fallbackMessage
+  comparisonOutput.value = null
+  comparisonDownloadError.value = ''
+  try {
+    comparisonOutput.value = await locateComparisonOutput()
+    if (!comparisonOutput.value) {
+      comparisonDownloadError.value = '暂未定位到比对结果文件，请稍后在结果管理区下载。'
+    }
+  } catch (error) {
+    console.error('Failed to locate comparison output:', error)
+    comparisonDownloadError.value = '暂未定位到比对结果文件，请稍后在结果管理区下载。'
+  }
+  compareSuccessVisible.value = true
+}
+
+const downloadComparisonResult = async () => {
+  if (comparisonDownloadLoading.value) return
+  if (!comparisonOutput.value) {
+    ElMessage.warning(comparisonDownloadError.value || '暂未定位到比对结果文件。')
+    return
+  }
+
+  comparisonDownloadLoading.value = true
+  comparisonDownloadError.value = ''
+  try {
+    const res = await fetchComparisonByHttp({
+      outputId: comparisonOutput.value.uid,
+      applicationId,
+    })
+    await downloadFileResponse(res, comparisonOutput.value.name || 'comparison-result')
+    compareSuccessVisible.value = false
+    ElMessage.success('比对结果下载已开始')
+  } catch (error) {
+    console.error('Failed to download comparison output:', error)
+    comparisonDownloadError.value = error?.message || '下载失败，请稍后重试。'
+    ElMessage.error(comparisonDownloadError.value)
+  } finally {
+    comparisonDownloadLoading.value = false
+  }
+}
+
 function addFolderRoute(row) {
   folderRoute.value.push(row.uid, row.name)
 }
@@ -471,8 +544,7 @@ const compareFromCsvMethod = async () => {
     const res = await compareFromCsv(compareFromCsvBody.value)
     console.log(res.data)
     if (res.data.code == 1) {
-      compareSuccessMessage.value = `比对完成，比对结果文件已存至结果管理区`
-      compareSuccessVisible.value = true
+      await showComparisonSuccess(res, '比对完成，比对结果文件已生成。')
     }
     else {
       compareFailedMessage.value = res.data.message
@@ -489,8 +561,7 @@ const compareFromTXTMethod = async () => {
     const res = await compareFromTXT(compareFromTXTBody.value)
     console.log(res.data)
     if (res.data.code == 1) {
-      compareSuccessMessage.value = `比对完成，比对结果文件已存至结果管理区`
-      compareSuccessVisible.value = true
+      await showComparisonSuccess(res, '比对完成，比对结果文件已生成。')
     }
     else {
       compareFailedMessage.value = res.data.message
@@ -510,10 +581,7 @@ const compareMethod = async () => {
     const res = await compare(compareBody.value)
     console.log(res.data)
     if (res.data.code == 1) {
-      const booleanArray = res.data.data
-      const resultList = booleanArray.map((result, index) => `${index + 1}. ${result ? 'True' : 'False'}`).join('; ')
-      compareSuccessMessage.value = `比对结果依次为: ${resultList}`
-      compareSuccessVisible.value = true
+      await showComparisonSuccess(res, '比对完成，比对结果文件已生成。')
     }
     else {
       compareFailedMessage.value = res.data.message
@@ -532,10 +600,7 @@ const compareTXTMethod = async () => {
     const res = await compareTXT(compareTXTBody.value)
     console.log(res.data)
     if (res.data.code == 1) {
-      const booleanArray = res.data.data
-      const resultList = booleanArray.map((result, index) => `${index + 1}. ${result ? 'True' : 'False'}`).join('; ')
-      compareSuccessMessage.value = `比对结果依次为: ${resultList}`
-      compareSuccessVisible.value = true
+      await showComparisonSuccess(res, '比对完成，比对结果文件已生成。')
     }
     else {
       compareFailedMessage.value = res.data.message
@@ -713,7 +778,7 @@ const getAgentMethod = async () => {
   const res = await getAgent()
   agents.value = res.data.body.data.map(item => ({
     value: item.uid,
-    label: item.uid
+    label: item.name || item.uid
   }))
 }
 
@@ -724,4 +789,9 @@ const handleSelectAgent = async (value) => {
 }
 </script>
 
-<style scoped></style>
+<style scoped>
+.download-error {
+  margin-top: 12px;
+  color: var(--el-color-danger);
+}
+</style>

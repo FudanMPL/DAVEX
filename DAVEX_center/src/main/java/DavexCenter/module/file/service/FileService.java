@@ -18,7 +18,6 @@ import java.util.stream.Collectors;
 import java.util.*;
 
 //import java.io.File; 命名冲突，使用全限定名
-import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.DatatypeConverter;
 
 import DavexBase.common.My;
@@ -38,7 +37,11 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -219,7 +222,7 @@ public class FileService {
 //        return Body.success(results, "文件保存处理完成");
 //    }
 
-    public Body<String> fetchFileByHttp(Long outputId, String applicationId, HttpServletResponse response) {
+    public ResponseEntity<?> fetchFileByHttp(Long outputId, String applicationId) {
 
         // 根据结果id查找结果表
         LambdaQueryWrapper<Output> queryWrapper = Wrappers.<Output>lambdaQuery()
@@ -227,47 +230,52 @@ public class FileService {
                 .eq(Output::getApplicationId, applicationId);
         Output queryOutput = outputMapper.selectOne(queryWrapper);
         if (queryOutput == null) {
-            return Body.error(String.format("找不到该文件，结果id: %d", outputId));
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("找不到该文件，结果id: %d", outputId)));
         }
-        // 判断文件是否过期
-        Timestamp expiredTime = queryOutput.getExpiredTime();
+        return fetchStoredFileByHttp(outputId, applicationId, queryOutput.getPath(), queryOutput.getName(),
+                queryOutput.getExpiredTime(), "common");
+    }
+
+    public ResponseEntity<?> fetchStoredFileByHttp(Long outputId, String applicationId, String storedPath,
+                                                    String fileName, Timestamp expiredTime, String type) {
         if (expiredTime != null && LocalDateTime.now().isAfter(expiredTime.toLocalDateTime())) {
-            return Body.error(String.format("该文件已过期，结果id: %d，文件名: %s，失效时间: %s", outputId, queryOutput.getName(),
-                    queryOutput.getExpiredTime()));
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("该文件已过期，结果id: %d，文件名: %s，失效时间: %s", outputId,
+                            fileName, expiredTime)));
         }
 
-        // 添加下载任务记录到任务表
-        DownloadTask newDownloadTask = new DownloadTask();
-        newDownloadTask.setApplicationId(applicationId);
-        newDownloadTask.setOutputId(queryOutput.getUid());
-        newDownloadTask.setDownloadTime(Timestamp.valueOf(LocalDateTime.now()));
-        newDownloadTask.setType("common");
-        downloadTaskMapper.insert(newDownloadTask);
+        Path filePath = Paths.get(storedPath);
+        try {
+            Resource resource = new UrlResource(filePath.toUri());
+            if (!resource.exists() || !resource.isReadable()) {
+                return ResponseEntity.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Body.error(String.format("获取失败: 结果id %d，文件名: %s，文件不存在或不可读", outputId, fileName)));
+            }
 
-        // 新建文件流，从磁盘读取文件流
-        String filePath = queryOutput.getPath();
-        String fileName = queryOutput.getName();
-        try (FileInputStream fis = new FileInputStream(filePath);
-                BufferedInputStream bis = new BufferedInputStream(fis);
-                OutputStream os = response.getOutputStream()) { // OutputStream 是文件写出流，将文件下载到浏览器客户端
-            // 新建字节数组，长度是文件的大小，比如文件 6kb, bis.available() = 1024 * 6
-            byte[] bytes = new byte[bis.available()];
-            // 从文件流读取字节到字节数组中
-            bis.read(bytes);
-            // 重置 response
-            response.reset();
-            // 设置 response 的下载响应头
-            response.setContentType("application/octet-stream");
-            response.setHeader("Content-disposition", "attachment;filename=" + URLEncoder.encode(fileName, "UTF-8")); // 这里要设置文件名的编码，否则中文的文件名下载后不显示
-            // 写出字节数组到输出流
-            os.write(bytes);
-            // 刷新输出流
-            os.flush();
+            DownloadTask newDownloadTask = new DownloadTask();
+            newDownloadTask.setApplicationId(applicationId);
+            newDownloadTask.setOutputId(outputId);
+            newDownloadTask.setDownloadTime(Timestamp.valueOf(LocalDateTime.now()));
+            newDownloadTask.setType(type);
+            downloadTaskMapper.insert(newDownloadTask);
+
+            String encodedFileName = URLEncoder.encode(fileName, "UTF-8").replace("+", "%20");
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .contentLength(Files.size(filePath))
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedFileName)
+                    .body(resource);
         } catch (Exception e) {
             e.printStackTrace();
-            return Body.error(String.format("获取失败: 结果id %d，文件名: %s，错误信息: %s", outputId, fileName, e.getMessage()));
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("获取失败: 结果id %d，文件名: %s，错误信息: %s", outputId, fileName,
+                            e.getMessage())));
         }
-        return Body.success(String.format("获取成功，结果id: %d，文件名: %s", outputId, fileName));
     }
 
     public Body<String> fetchFile(Long outputId, String applicationId) {

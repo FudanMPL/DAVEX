@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -57,6 +58,12 @@ public class ComparisonFileController {
                                         @RequestParam("applicationId") String applicationId) {
 
         return comparisonFileService.fetchComparison(outputId, applicationId);
+    }
+
+    @PostMapping("/fetchComparisonByHttp")
+    public ResponseEntity<?> fetchComparisonByHttp(@RequestParam("outputId") Long outputId,
+                                                   @RequestParam("applicationId") String applicationId) {
+        return comparisonFileService.fetchComparisonByHttp(outputId, applicationId);
     }
 
     // application查询center结果管理区所有comparison文件的接口

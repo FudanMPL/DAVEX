@@ -35,6 +35,20 @@ export const fetchMpc = ({ mpcOutputId, applicationId }) => {
     return res
 }
 
+// 将MPC结果文件以二进制流下载到浏览器
+export const fetchMpcByHttp = ({ mpcOutputId, applicationId }) => {
+    const params = new URLSearchParams()
+    params.append('mpcOutputId', mpcOutputId)
+    params.append('applicationId', applicationId)
+    return request.post(
+        'MpcTasksOutput/fetchByHttp',
+        params.toString(),
+        {
+            responseType: 'blob',
+        }
+    )
+}
+
 // 从结果管理区删除文件
 export const deleteMpc = ({ mpcOutputId, applicationId }) => {
     const params = new URLSearchParams()

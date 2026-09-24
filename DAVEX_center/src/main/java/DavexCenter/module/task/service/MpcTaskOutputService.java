@@ -14,6 +14,8 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -148,6 +150,20 @@ public class MpcTaskOutputService {
         }
         return Body.success(
                 String.format("获取成功，结果id: %d，文件名: %s，保存路径: %s", mpcOutputId, fileName, newDownloadTask.getPath()));
+    }
+
+    public ResponseEntity<?> fetchMpcByHttp(Long mpcOutputId, String applicationId) {
+        LambdaQueryWrapper<MpcTaskOutput> queryWrapper = Wrappers.<MpcTaskOutput>lambdaQuery()
+                .eq(MpcTaskOutput::getUid, mpcOutputId)
+                .eq(MpcTaskOutput::getApplicationId, applicationId);
+        MpcTaskOutput output = mpcTaskOutputMapper.selectOne(queryWrapper);
+        if (output == null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("找不到该文件，结果id: %d", mpcOutputId)));
+        }
+        return fileService.fetchStoredFileByHttp(mpcOutputId, applicationId, output.getPath(), output.getName(),
+                output.getExpiredTime(), "mpc");
     }
 
     public Body<List<MpcTaskOutput>> queryMpc(String applicationId) {

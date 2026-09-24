@@ -7,7 +7,9 @@ import {
   Message,
   MessageBox,
   Promotion,
-  Connection
+  Connection,
+  User,
+  UserFilled
 } from "@element-plus/icons-vue";
 </script>
 
@@ -38,10 +40,6 @@ import {
             <el-icon><Message /></el-icon>
             <span class="centered-text">历史记录</span>
           </el-menu-item>
-          <el-menu-item index="/did">
-            <el-icon><Connection /></el-icon>
-            <span class="centered-text">DID系统</span>
-          </el-menu-item>
           <el-sub-menu index="/dve">
             <template #title>
               <el-icon><Menu /></el-icon>
@@ -69,34 +67,46 @@ import {
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">文件传输</span>
             </el-menu-item>
+            <!-- 查询功能暂不在导航栏展示
             <el-menu-item index="/datashare/quEry">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">查询</span>
             </el-menu-item>
+            -->
             <el-menu-item index="/datashare/comPare">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">比对</span>
             </el-menu-item>
+            <!-- 隐私集合求交暂不在导航栏展示
             <el-menu-item index="/datashare/pSi">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">隐私集合求交</span>
             </el-menu-item>
+            -->
             <el-menu-item index="/datashare/mPc">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">安全多方计算</span>
             </el-menu-item>
+            <!-- 安全推理暂不在导航栏展示
             <el-menu-item index="/datashare/secureInfer">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">安全推理</span>
             </el-menu-item>
+            -->
             <el-menu-item index="/datashare/fLearning">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">联邦学习</span>
             </el-menu-item>
+            <el-menu-item index="/did">
+              <el-icon><Connection /></el-icon>
+              <span class="centered-text">DID身份认证</span>
+            </el-menu-item>
+            <!-- 隐私保护类案查询暂不在导航栏展示
             <el-menu-item index="/verdict/query">
               <el-icon><EditPen /></el-icon>
               <span class="centered-text">隐私保护类案查询</span>
             </el-menu-item>
+            -->
           </el-sub-menu>
           <el-sub-menu index="/result">
             <template #title>
@@ -107,10 +117,12 @@ import {
               <el-icon><Document /></el-icon>
               <span class="centered-text">文件传输</span>
             </el-menu-item>
+            <!-- 查询结果模板暂不在导航栏展示
             <el-menu-item index="/result/quEry">
               <el-icon><Document /></el-icon>
               <span class="centered-text">查询</span>
             </el-menu-item>
+            -->
             <el-menu-item index="/result/comPare">
               <el-icon><Document /></el-icon>
               <span class="centered-text">比对</span>
@@ -123,9 +135,38 @@ import {
               <el-icon><Document /></el-icon>
               <span class="centered-text">联邦学习</span>
             </el-menu-item>
+            <!-- 隐私保护类案查询结果模板暂不在导航栏展示
             <el-menu-item index="/verdictResult/query">
               <el-icon><Document /></el-icon>
               <span class="centered-text">隐私保护类案查询</span>
+            </el-menu-item>
+            -->
+          </el-sub-menu>
+          <!-- 认证管理暂不在导航栏展示，恢复时移除 v-if="false" 即可 -->
+          <el-sub-menu v-if="false" index="/auth">
+            <template #title>
+              <el-icon><UserFilled /></el-icon>
+              <span class="centered-text">认证管理</span>
+            </template>
+            <!-- <el-menu-item index="/auth/tokens">
+              <el-icon><EditPen /></el-icon>
+              <span class="centered-text">Token管理</span>
+            </el-menu-item>
+            <el-menu-item index="/auth/userManagement">
+              <el-icon><EditPen /></el-icon>
+              <span class="centered-text">认证服务用户管理</span>
+            </el-menu-item> -->
+            <el-menu-item index="/auth/didManagement">
+              <el-icon><Key /></el-icon>
+              <span class="centered-text">DID管理</span>
+            </el-menu-item>
+            <el-menu-item index="/auth/vcManagement">
+              <el-icon><Stamp /></el-icon>
+              <span class="centered-text">凭证管理</span>
+            </el-menu-item>
+            <el-menu-item index="/auth/privacyVpManagement">
+              <el-icon><Lock /></el-icon>
+              <span class="centered-text">隐私保护凭证管理</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

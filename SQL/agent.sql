@@ -239,7 +239,7 @@ SELECT r.expression
 FROM file_rule fr
     JOIN rule r ON fr.rule_id = r.uid
 WHERE
-    fr.file_id = 'DAVEX-C1-GXX2-F1'
+    fr.file_id = 'DAVEX-C1-GXX2-F1';
 
 SET FOREIGN_KEY_CHECKS = 1;
 

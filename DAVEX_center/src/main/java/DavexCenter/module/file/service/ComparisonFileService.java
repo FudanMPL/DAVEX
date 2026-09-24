@@ -14,6 +14,8 @@ import DavexBase.entity.MpcTaskOutput;
 import DavexCenter.entity.Output;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -132,6 +134,20 @@ public class ComparisonFileService {
             return Body.error(String.format("获取失败: 结果id %d，文件名: %s，错误信息: %s", outputId, fileName, e.getMessage()));
         }
         return Body.success(String.format("获取成功，结果id: %d，文件名: %s，保存路径: %s", outputId, fileName, newDownloadTask.getPath()));
+    }
+
+    public ResponseEntity<?> fetchComparisonByHttp(Long outputId, String applicationId) {
+        LambdaQueryWrapper<ComparisonOutput> queryWrapper = Wrappers.<ComparisonOutput>lambdaQuery()
+                .eq(ComparisonOutput::getUid, outputId)
+                .eq(ComparisonOutput::getApplicationId, applicationId);
+        ComparisonOutput output = comparisonOutputMapper.selectOne(queryWrapper);
+        if (output == null) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Body.error(String.format("找不到该文件，结果id: %d", outputId)));
+        }
+        return fileService.fetchStoredFileByHttp(outputId, applicationId, output.getPath(), output.getName(),
+                output.getExpiredTime(), "comparison");
     }
 
     public Body<List<ComparisonOutput>> queryComparison(String applicationId) {

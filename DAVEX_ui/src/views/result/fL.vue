@@ -36,7 +36,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="操作">
+          <el-table-column label="操作" min-width="200">
             <template #default="scope">
               <el-button class="small-default-button" @click="readFlMethod(scope.row.uid)">
                 <el-icon><View /></el-icon> 预览文件
@@ -57,7 +57,7 @@
         </el-table>
       </el-main>
     </el-container>
-  
+
     <el-dialog v-model="fetchSuccessVisible" title="文件获取结果" width="30%">
       <span>{{ fetchSuccessMessage }}</span>
       <template #footer>
@@ -239,4 +239,3 @@
   </script>
   
   <style scoped></style>
-  

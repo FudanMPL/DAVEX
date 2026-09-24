@@ -103,7 +103,7 @@
             <el-table-column
                 fixed="right"
                 label="操作"
-                mid-width="300"
+                min-width="200"
                 header-align="center"
                 align="center"
             >
@@ -179,16 +179,39 @@
 
     <el-dialog v-model="createFLTaskVisible" :title="createFLTaskTitle" width="30%">
       <span>{{ createFLTaskMessage }}</span>
+      <div v-if="flResultError" class="download-error">
+        {{ flResultError }}
+      </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button class="close-button" @click="createFLTaskVisible = false" style="margin-right: 10px;">返回</el-button>
-          <router-link to="/result/fL">
-            <el-button class="default-button">
-              查看结果管理区
-            </el-button>
-          </router-link>
+          <el-button
+              class="default-button"
+              :loading="flPreviewLoading"
+              :disabled="!flOutput || flDownloadLoading"
+              @click="previewFlResult"
+          >
+            <el-icon><View /></el-icon> 预览结果
+          </el-button>
+          <el-button
+              class="default-button"
+              :loading="flDownloadLoading"
+              :disabled="!flOutput || flPreviewLoading"
+              @click="downloadFlResult"
+          >
+            <el-icon><Download /></el-icon> 立即下载
+          </el-button>
         </div>
       </template>
+    </el-dialog>
+    <el-dialog
+        v-model="flPreviewVisible"
+        title="联邦学习结果预览"
+        width="70%"
+        append-to-body
+        @closed="clearFlPreview"
+    >
+      <img v-if="flPreviewUrl" :src="flPreviewUrl" class="result-preview-image" alt="联邦学习结果" />
+      <pre v-else class="result-preview-content">{{ flPreviewContent }}</pre>
     </el-dialog>
     <el-dialog v-model="rayStatusDialogVisible" :title="rayStatusDialogTitle" width="30%">
       <el-table
@@ -237,9 +260,11 @@
 import {activeRay,stopRay,getRayStatus,executeTask,joinRay} from '../../api/fLearning.js'
 import {getAgent} from '../../api/testDve.js'
 import {getDirectory, getRootByAgent} from '../../api/folderController.js'
-import {onMounted, ref,reactive,computed} from "vue";
-import {genFileId, UploadInstance, UploadProps, UploadRawFile} from "element-plus";
-import {Connection} from "@element-plus/icons-vue";
+  import {onMounted, onBeforeUnmount, ref,reactive,computed} from "vue";
+  import {getFlResult, fetchFlByHttp, readFl} from '../../api/flOutput.js'
+  import {ElMessage, genFileId, UploadInstance, UploadProps, UploadRawFile} from "element-plus";
+  import {Connection, Download, View} from "@element-plus/icons-vue";
+  import {assertFileResponse, delay, downloadFileResponse} from '../../utils/resultFile.js'
 
 onMounted(() => {
     getAgentMethod()
@@ -252,6 +277,15 @@ const createFLTaskVisible = ref(false)
 const createFLTaskTitle = ref('')
 
   const createFLTaskMessage = ref('')
+  const flOutput = ref(null)
+  const flResultError = ref('')
+  const flDownloadLoading = ref(false)
+  const flPreviewLoading = ref(false)
+  const flPreviewVisible = ref(false)
+  const flPreviewContent = ref('')
+  const flPreviewUrl = ref('')
+  const flResultApplicationId = 'Davex-C1-A1'
+  let flPollToken = 0
 
 
   const agents = ref([])
@@ -304,17 +338,128 @@ const createFLTaskTitle = ref('')
   //   await joinRay(joinRayBody.value);
     
   // }
+  const waitForFlOutput = async (existingOutputIds) => {
+    const pollToken = ++flPollToken
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      if (pollToken !== flPollToken) return
+      try {
+        const res = await getFlResult({applicationId: flResultApplicationId})
+        const outputs = Array.isArray(res.data?.data) ? res.data.data : []
+        const output = outputs
+            .filter(item => !existingOutputIds.has(item.uid))
+            .sort((first, second) => new Date(second.uploadDate || 0).getTime() - new Date(first.uploadDate || 0).getTime())[0]
+        if (output) {
+          flOutput.value = output
+          createFLTaskTitle.value = '联邦学习完成'
+          createFLTaskMessage.value = `结果文件：${output.name}`
+          flResultError.value = ''
+          createFLTaskVisible.value = true
+          return
+        }
+      } catch (error) {
+        console.error('Failed to query FL output:', error)
+      }
+      await delay(2000)
+    }
+
+    if (pollToken === flPollToken) {
+      createFLTaskTitle.value = '联邦学习任务执行中'
+      createFLTaskMessage.value = '任务仍在执行，完成后可在结果管理区获取文件。'
+      flResultError.value = '等待结果超时，暂时无法直接下载。'
+      createFLTaskVisible.value = true
+    }
+  }
+
+  const clearFlPreview = () => {
+    if (flPreviewUrl.value) URL.revokeObjectURL(flPreviewUrl.value)
+    flPreviewUrl.value = ''
+    flPreviewContent.value = ''
+  }
+
+  const previewFlResult = async () => {
+    if (!flOutput.value || flPreviewLoading.value) return
+    flPreviewLoading.value = true
+    flResultError.value = ''
+    clearFlPreview()
+    try {
+      const extension = flOutput.value.name?.split('.').pop()?.toLowerCase() || ''
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension)) {
+        const res = await fetchFlByHttp({
+          outputId: flOutput.value.uid,
+          applicationId: flResultApplicationId,
+        })
+        await assertFileResponse(res, '联邦学习结果预览失败。')
+        flPreviewUrl.value = URL.createObjectURL(res.data)
+      } else {
+        const res = await readFl({
+          outputId: flOutput.value.uid,
+          applicationId: flResultApplicationId,
+        })
+        if (res.data?.code !== 1) {
+          throw new Error(res.data?.message || '联邦学习结果预览失败。')
+        }
+        flPreviewContent.value = String(res.data?.data ?? '')
+      }
+      flPreviewVisible.value = true
+    } catch (error) {
+      console.error('Failed to preview FL output:', error)
+      flResultError.value = error?.message || '联邦学习结果预览失败，请稍后重试。'
+      ElMessage.error(flResultError.value)
+    } finally {
+      flPreviewLoading.value = false
+    }
+  }
+
+  const downloadFlResult = async () => {
+    if (!flOutput.value || flDownloadLoading.value) return
+    flDownloadLoading.value = true
+    flResultError.value = ''
+    try {
+      const res = await fetchFlByHttp({
+        outputId: flOutput.value.uid,
+        applicationId: flResultApplicationId,
+      })
+      await downloadFileResponse(res, flOutput.value.name || 'fl-result')
+      createFLTaskVisible.value = false
+      ElMessage.success('联邦学习结果下载已开始')
+    } catch (error) {
+      console.error('Failed to download FL output:', error)
+      flResultError.value = error?.message || '下载失败，请稍后重试。'
+      ElMessage.error(flResultError.value)
+    } finally {
+      flDownloadLoading.value = false
+    }
+  }
+
   const createMethod = async () => {
     try {
-      createFLTaskMessage.value = `联邦学习任务创建完成`
-      createFLTaskTitle.value = `创建成功`
-      createFLTaskVisible.value = true
-      await executeTask(executeTaskBody.value)
+      const currentResults = await getFlResult({applicationId: flResultApplicationId})
+      const existingOutputIds = new Set(
+          (Array.isArray(currentResults.data?.data) ? currentResults.data.data : []).map(item => item.uid)
+      )
+      flOutput.value = null
+      flResultError.value = ''
+      createFLTaskVisible.value = false
+      const res = await executeTask(executeTaskBody.value)
+      if (res.data?.code !== 1) {
+        throw new Error(res.data?.message || '联邦学习任务创建失败。')
+      }
+      ElMessage.success('联邦学习任务已创建，正在等待执行结果')
+      void waitForFlOutput(existingOutputIds)
     }
     catch (error) {
       console.error('Failed to create secure inference task:', error)
+      createFLTaskTitle.value = '创建失败'
+      createFLTaskMessage.value = error?.message || '联邦学习任务创建失败。'
+      flResultError.value = ''
+      createFLTaskVisible.value = true
     }
   }
+
+  onBeforeUnmount(() => {
+    flPollToken += 1
+    clearFlPreview()
+  })
   
 
   const chooseModelMethod = async (agentId, fileId, name) => {
@@ -416,7 +561,7 @@ const createFLTaskTitle = ref('')
     const res = await getAgent()
     agents.value = res.data.body.data.map(item => ({
       value: item.uid,
-      label: item.uid
+      label: item.name || item.uid
     }))
   }
 
@@ -590,6 +735,31 @@ const rayStatusDialogTitle = ref('节点状态')
 
 
 <style scoped>
+.download-error {
+  margin-top: 12px;
+  color: var(--el-color-danger);
+}
+
+.result-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 65vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.result-preview-content {
+  box-sizing: border-box;
+  max-height: 60vh;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 pre {
   text-align: center; /* 预格式化文本对齐方式 */
   word-wrap: break-word; /* 保证长单词换行显示 */

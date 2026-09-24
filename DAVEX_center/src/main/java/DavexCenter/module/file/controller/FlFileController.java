@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -53,6 +54,12 @@ public class FlFileController {
                                         @RequestParam("applicationId") String applicationId) {
 
         return flFileService.fetchFl(outputId, applicationId);
+    }
+
+    @PostMapping("/fetchFlByHttp")
+    public ResponseEntity<?> fetchFlByHttp(@RequestParam("outputId") Long outputId,
+                                          @RequestParam("applicationId") String applicationId) {
+        return flFileService.fetchFlByHttp(outputId, applicationId);
     }
 
     // application查询center结果管理区所有联邦学习结果文件的接口

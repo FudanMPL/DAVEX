@@ -10,13 +10,12 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-import javax.servlet.http.HttpServletResponse;
-
 import DavexBase.service.notification.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -89,11 +88,10 @@ public class FileController {
 
     // application从center结果管理区通过Http获取文件的接口
     @PostMapping("/fetchByHttp")
-    public Body<String> fetchByHttp(@RequestParam("outputId") Long outputId,
-                                    @RequestParam("applicationId") String applicationId,
-                                    HttpServletResponse response) {
+    public ResponseEntity<?> fetchByHttp(@RequestParam("outputId") Long outputId,
+                                         @RequestParam("applicationId") String applicationId) {
 
-        return fileService.fetchFileByHttp(outputId, applicationId, response);
+        return fileService.fetchFileByHttp(outputId, applicationId);
     }
 
     // application通过路径直接获取center结果管理区文件的接口

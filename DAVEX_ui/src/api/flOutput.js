@@ -35,6 +35,20 @@ export const fetchFl = ({ outputId, applicationId }) => {
     return res
 }
 
+// 将联邦学习结果文件以二进制流下载到浏览器
+export const fetchFlByHttp = ({ outputId, applicationId }) => {
+    const params = new URLSearchParams()
+    params.append('outputId', outputId)
+    params.append('applicationId', applicationId)
+    return request.post(
+        'flFile/fetchFlByHttp',
+        params.toString(),
+        {
+            responseType: 'blob',
+        }
+    )
+}
+
 // 从结果管理区删除文件
 export const deleteFl = ({ outputId, applicationId }) => {
     const params = new URLSearchParams()

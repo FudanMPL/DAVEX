@@ -49,6 +49,20 @@ export const fetchFile = ({ outputId, applicationId }) => {
     return res
 }
 
+// 将结果管理区文件以二进制流下载到浏览器
+export const fetchFileByHttp = ({ outputId, applicationId }) => {
+    const params = new URLSearchParams()
+    params.append('outputId', outputId)
+    params.append('applicationId', applicationId)
+    return request.post(
+        'file/fetchByHttp',
+        params.toString(),
+        {
+            responseType: 'blob',
+        }
+    )
+}
+
 // 从结果管理区删除文件
 export const deleteFile = ({ outputId, applicationId }) => {
     const params = new URLSearchParams()

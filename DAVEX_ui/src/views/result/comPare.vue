@@ -37,7 +37,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作">
+        <el-table-column label="操作" min-width="200">
           <template #default="scope">
             <el-button class="small-default-button" @click="readComparisonMethod(scope.row.uid)">
               <el-icon><View /></el-icon> 预览文件

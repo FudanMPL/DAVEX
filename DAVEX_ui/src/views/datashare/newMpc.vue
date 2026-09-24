@@ -95,7 +95,7 @@
           <el-table-column
               fixed="right"
               label="操作"
-              mid-width="300"
+              min-width="200"
               header-align="center"
               align="center"
           >
@@ -176,7 +176,7 @@
           <el-table-column
               fixed="right"
               label="操作"
-              mid-width="300"
+              min-width="200"
               header-align="center"
               align="center"
           >
@@ -306,18 +306,34 @@
   <!--      </span>-->
   <!--    </template>-->
   <!--  </el-dialog>-->
-  <el-dialog v-model="mpcSuccessVisible" title="创建完成" width="30%">
+  <el-dialog v-model="mpcSuccessVisible" title="MPC任务结果" width="30%">
     <span>{{ mpcSuccessMessage }}</span>
+    <div v-if="mpcResultError" class="download-error">
+      {{ mpcResultError }}
+    </div>
     <template #footer>
       <div class="dialog-footer">
-        <el-button class="close-button" @click="mpcSuccessVisible = false" style="margin-right: 10px;">返回</el-button>
-        <router-link to="/result/mPc">
-          <el-button class="default-button">
-            查看结果管理区
-          </el-button>
-        </router-link>
+        <el-button
+            class="default-button"
+            :loading="mpcPreviewLoading"
+            :disabled="!mpcOutput || mpcDownloadLoading"
+            @click="previewMpcResult"
+        >
+          <el-icon><View /></el-icon> 预览结果
+        </el-button>
+        <el-button
+            class="default-button"
+            :loading="mpcDownloadLoading"
+            :disabled="!mpcOutput || mpcPreviewLoading"
+            @click="downloadMpcResult"
+        >
+          <el-icon><Download /></el-icon> 立即下载
+        </el-button>
       </div>
     </template>
+  </el-dialog>
+  <el-dialog v-model="mpcPreviewVisible" title="MPC结果预览" width="70%" append-to-body>
+    <pre class="result-preview-content">{{ mpcPreviewContent }}</pre>
   </el-dialog>
   <el-dialog v-model="mpcFailedVisible" title="创建失败" width="30%">
     <span>{{ mpcFailedMessage }}</span>
@@ -443,10 +459,12 @@
 <script lang="ts" setup>
 import {getAgent} from '../../api/testDve.js'
 import {getDirectory, getRootByAgent} from '../../api/folderController.js'
-import {ref, computed, onMounted} from 'vue'
+import {ref, computed, onMounted, onBeforeUnmount} from 'vue'
 import { createMpcTask, getMpcList } from '../../api/mpC.js'
-import {genFileId, UploadInstance, UploadProps, UploadRawFile} from 'element-plus'
-import {Connection, Tickets} from "@element-plus/icons-vue";
+import {getMpcResult, fetchMpcByHttp, readMpc} from '../../api/mpcOutput.js'
+import {ElMessage, genFileId, UploadInstance, UploadProps, UploadRawFile} from 'element-plus'
+import {Connection, Download, Tickets, View} from "@element-plus/icons-vue";
+import {delay, downloadFileResponse} from '../../utils/resultFile.js'
 
 onMounted(() => {
   getAgentMethod()
@@ -457,6 +475,13 @@ const mpcSuccessVisible = ref(false)
 const mpcFailedVisible = ref(false)
 const mpcSuccessMessage = ref('')
 const mpcFailedMessage = ref('')
+const mpcOutput = ref(null)
+const mpcResultError = ref('')
+const mpcDownloadLoading = ref(false)
+const mpcPreviewLoading = ref(false)
+const mpcPreviewVisible = ref(false)
+const mpcPreviewContent = ref('')
+let mpcPollToken = 0
 
 const descriptionsTitle = computed(() => {
   const firstFileText = fileName.value ? `第一方文件：${fileName.value}` : ''
@@ -523,14 +548,96 @@ const createBody = ref({
   mpcTask: createMpcTaskBody.value
 })
 
+const waitForMpcOutput = async (taskId) => {
+  const pollToken = ++mpcPollToken
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    if (pollToken !== mpcPollToken) return
+    try {
+      const res = await getMpcResult({applicationId: createMpcTaskBody.value.applicationId})
+      const outputs = Array.isArray(res.data?.data) ? res.data.data : []
+      const output = outputs.find(item => String(item.taskId) === String(taskId))
+      if (output) {
+        mpcOutput.value = output
+        mpcSuccessMessage.value = `MPC任务执行完成，结果文件：${output.name}`
+        mpcResultError.value = ''
+        mpcSuccessVisible.value = true
+        return
+      }
+    } catch (error) {
+      console.error('Failed to query MPC output:', error)
+    }
+    await delay(2000)
+  }
+
+  if (pollToken === mpcPollToken) {
+    mpcSuccessMessage.value = 'MPC任务仍在执行，完成后可在结果管理区获取文件。'
+    mpcResultError.value = '等待结果超时，暂时无法直接下载。'
+    mpcSuccessVisible.value = true
+  }
+}
+
+const previewMpcResult = async () => {
+  if (!mpcOutput.value || mpcPreviewLoading.value) return
+  mpcPreviewLoading.value = true
+  mpcResultError.value = ''
+  try {
+    const res = await readMpc({
+      mpcOutputId: mpcOutput.value.uid,
+      applicationId: createMpcTaskBody.value.applicationId,
+    })
+    if (res.data?.code !== 1) {
+      throw new Error(res.data?.message || 'MPC结果预览失败。')
+    }
+    mpcPreviewContent.value = String(res.data?.data ?? '')
+    mpcPreviewVisible.value = true
+  } catch (error) {
+    console.error('Failed to preview MPC output:', error)
+    mpcResultError.value = error?.message || 'MPC结果预览失败，请稍后重试。'
+    ElMessage.error(mpcResultError.value)
+  } finally {
+    mpcPreviewLoading.value = false
+  }
+}
+
+const downloadMpcResult = async () => {
+  if (!mpcOutput.value || mpcDownloadLoading.value) return
+  mpcDownloadLoading.value = true
+  mpcResultError.value = ''
+  try {
+    const res = await fetchMpcByHttp({
+      mpcOutputId: mpcOutput.value.uid,
+      applicationId: createMpcTaskBody.value.applicationId,
+    })
+    await downloadFileResponse(res, mpcOutput.value.name || 'mpc-result')
+    mpcSuccessVisible.value = false
+    ElMessage.success('MPC结果下载已开始')
+  } catch (error) {
+    console.error('Failed to download MPC output:', error)
+    mpcResultError.value = error?.message || '下载失败，请稍后重试。'
+    ElMessage.error(mpcResultError.value)
+  } finally {
+    mpcDownloadLoading.value = false
+  }
+}
+
 const createMethod = async () => {
   try {
     console.log(createBody.value)
     const res = await createMpcTask(createBody.value)
     console.log(res.data)
     if (res.data.body.code == 1) {
-      mpcSuccessMessage.value = `MPC任务创建完成，执行完成后将通过消息中心提示`
-      mpcSuccessVisible.value = true
+      const taskId = res.data.body.data?.uid
+      mpcOutput.value = null
+      mpcResultError.value = ''
+      mpcSuccessVisible.value = false
+      ElMessage.success('MPC任务已创建，正在等待执行结果')
+      if (taskId) {
+        void waitForMpcOutput(taskId)
+      } else {
+        mpcSuccessMessage.value = 'MPC任务已创建，但未返回任务ID，请稍后在结果管理区查看。'
+        mpcResultError.value = '暂时无法定位结果文件。'
+        mpcSuccessVisible.value = true
+      }
     }
     else {
       mpcFailedMessage.value = res.data.message
@@ -541,6 +648,10 @@ const createMethod = async () => {
     console.error('Failed to create MPC task:', error)
   }
 }
+
+onBeforeUnmount(() => {
+  mpcPollToken += 1
+})
 
 function addFolderRoute(row) {
   folderRoute.value.push(row.uid, row.name)
@@ -650,7 +761,7 @@ const getAgentMethod = async () => {
   const res = await getAgent()
   agents.value = res.data.body.data.map(item => ({
     value: item.uid,
-    label: item.uid
+    label: item.name || item.uid
   }))
 }
 
@@ -779,6 +890,23 @@ const saveRuntimeParameters = () => {
 </script>
 
 <style scoped>
+.download-error {
+  margin-top: 12px;
+  color: var(--el-color-danger);
+}
+
+.result-preview-content {
+  box-sizing: border-box;
+  max-height: 60vh;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .form-container {
   display: flex;
   justify-content: center;

@@ -1210,7 +1210,7 @@ const getAgentMethod = async () => {
   const res = await getAgent()
   agents.value = res.data.body.data.map(item => ({
     value: item.uid,
-    label: item.uid
+    label: item.name || item.uid
   }))
 }
 
