@@ -36,5 +36,20 @@ export const presentationNonce = (data, actorAlias) => post('/api/v1/did/present
 export const presentationGenerate = (data, actorAlias) => post('/api/v1/did/presentation/generate', data, actorAlias)
 export const presentationVerify = (data, actorAlias) => post('/api/v1/did/presentation/verify', data, actorAlias)
 
+export const privacyGroupQuery = (groupID, actorAlias) => get('/api/v1/did/privacy/group', actorAlias, { groupID })
+export const privacyGroupMember = (data, actorAlias) => post('/api/v1/did/privacy/group/member', data, actorAlias)
+export const privacyPresentationGenerate = (data, actorAlias) => post('/api/v1/did/privacy/presentation/generate', data, actorAlias)
+export const privacyPresentationVerify = (data, actorAlias) => post('/api/v1/did/privacy/presentation/verify', data, actorAlias)
+export const privacyKeyImage = (value, actorAlias) => get('/api/v1/did/privacy/keyimage', actorAlias, { value })
+
+export const revocationIssuerQuery = (eventType, issuerDID, actorAlias) => get('/api/v1/did/revocation/issuer', actorAlias, { eventType, issuerDID })
+export const revocationCommitteeQuery = (groupID, actorAlias) => get('/api/v1/did/revocation/committee', actorAlias, { groupID })
+export const revocationRequestCreate = (data, actorAlias) => post('/api/v1/did/revocation/requests', data, actorAlias)
+export const revocationRequestQuery = (draftID, actorAlias) => get(`/api/v1/did/revocation/requests/${encodeURIComponent(draftID)}`, actorAlias)
+export const revocationRequestApprove = (draftID, actorAlias) => post(`/api/v1/did/revocation/requests/${encodeURIComponent(draftID)}/approvals`, {}, actorAlias)
+export const revocationExecute = (draftID, actorAlias) => post('/api/v1/did/revocation/execute', { draftID }, actorAlias)
+export const revocationLogs = (vcID, actorAlias) => get('/api/v1/did/revocation/logs', actorAlias, { vcID })
+export const revocationConsumed = (hash, actorAlias) => get('/api/v1/did/revocation/consumed', actorAlias, { hash })
+
 export const roleQuery = (did, actorAlias) => get('/api/v1/did/roles', actorAlias, { did })
 export const roleUpdate = (data, actorAlias) => put('/api/v1/did/roles', data, actorAlias)

@@ -383,7 +383,8 @@
                     </el-form-item>
                     <el-button
                       class="start-button full-button"
-                      @click="showPending('加入匿名资格群组')"
+                      :loading="loading.addPrivacyMember"
+                      @click="addPrivacyMember"
                     >
                       将当前 VC 加入群组
                     </el-button>
@@ -438,7 +439,7 @@
                   <el-input-number
                     v-model="nonceForm.ttlSeconds"
                     :min="30"
-                    :max="3600"
+                    :max="600"
                     controls-position="right"
                   />
                 </el-form-item>
@@ -607,7 +608,7 @@
                   <el-input-number
                     v-model="anonymousNonceForm.ttlSeconds"
                     :min="30"
-                    :max="3600"
+                    :max="600"
                     controls-position="right"
                   />
                 </el-form-item>
@@ -659,7 +660,8 @@
                 <el-button
                   class="default-button full-button"
                   :disabled="!privacyPresentationForm.nonce"
-                  @click="previewPrivacyVpGeneration"
+                  :loading="loading.generatePrivacyVp"
+                  @click="generatePrivacyVp"
                 >
                   生成匿名凭证展示
                 </el-button>
@@ -715,7 +717,8 @@
                 <el-button
                   class="default-button full-button"
                   :disabled="!privacyPresentationJson"
-                  @click="previewPrivacyVpVerification"
+                  :loading="loading.verifyPrivacyVp"
+                  @click="verifyPrivacyVp"
                 >
                   验证匿名资格
                 </el-button>
@@ -745,34 +748,23 @@
                     placeholder="输入 VC ID"
                   />
                 </el-form-item>
+                <el-form-item label="匿名资格群组">
+                  <el-input v-model="revocationForm.groupID" placeholder="输入群组 ID" />
+                </el-form-item>
                 <el-form-item label="撤销原因">
-                  <el-select
-                    v-model="revocationForm.eventType"
-                    class="full-select"
-                  >
-                    <el-option
-                      label="凭证信息失效"
-                      value="credential_invalid"
-                    />
-                    <el-option
-                      label="持有者权限变更"
-                      value="permission_changed"
-                    />
-                    <el-option label="签发错误" value="issuance_error" />
-                    <el-option label="其他原因" value="other" />
-                  </el-select>
+                  <el-input v-model="revocationForm.eventType" placeholder="输入已登记的事件类型" />
                 </el-form-item>
-                <el-form-item label="补充说明">
-                  <el-input
-                    v-model="revocationForm.reason"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="简要说明撤销原因"
-                  />
-                </el-form-item>
+                <el-collapse class="advanced-collapse">
+                  <el-collapse-item title="高级设置：事件签发方" name="issuer">
+                    <el-form-item label="事件签发方 DID">
+                      <el-input v-model="revocationForm.eventIssuerDID" />
+                    </el-form-item>
+                  </el-collapse-item>
+                </el-collapse>
                 <el-button
                   class="default-button"
-                  @click="showPending('凭证撤销申请')"
+                  :loading="loading.createRevocation"
+                  @click="createRevocation"
                 >
                   提交撤销申请
                 </el-button>
@@ -797,10 +789,10 @@
                 <div class="approval-box">
                   <div class="approval-title">
                     <span>委员会批准进度</span>
-                    <strong>0 / 2</strong>
+                    <strong>{{ approvalCount }} / {{ approvalThreshold }}</strong>
                   </div>
                   <el-progress
-                    :percentage="0"
+                    :percentage="approvalPercentage"
                     :stroke-width="8"
                     :show-text="false"
                   />
@@ -808,19 +800,24 @@
                 <div class="button-stack card-actions">
                   <el-button
                     class="start-button"
-                    @click="showPending('撤销批准')"
+                    :disabled="!revocationForm.draftID || revocationDraft?.status === 'Executed'"
+                    :loading="loading.approveRevocation"
+                    @click="approveRevocation"
                   >
                     批准申请
                   </el-button>
                   <el-button
                     class="default-button"
-                    @click="showPending('执行撤销')"
+                    :disabled="!approvalThreshold || approvalCount < approvalThreshold || revocationDraft?.status === 'Executed'"
+                    :loading="loading.executeRevocation"
+                    @click="executeRevocation"
                   >
                     执行撤销
                   </el-button>
                   <el-button
                     class="start-button"
-                    @click="showPending('撤销状态查询')"
+                    :loading="loading.queryRevocation"
+                    @click="queryRevocation"
                   >
                     查询结果
                   </el-button>
@@ -864,7 +861,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   credentialIssue,
@@ -880,6 +877,19 @@ import {
   presentationGenerate,
   presentationNonce,
   presentationVerify,
+  privacyGroupMember,
+  privacyGroupQuery,
+  privacyKeyImage,
+  privacyPresentationGenerate,
+  privacyPresentationVerify,
+  revocationCommitteeQuery,
+  revocationConsumed,
+  revocationExecute,
+  revocationIssuerQuery,
+  revocationLogs,
+  revocationRequestApprove,
+  revocationRequestCreate,
+  revocationRequestQuery,
   roleQuery,
 } from '@/api/did'
 
@@ -964,6 +974,7 @@ const privacyPresentationForm = reactive({
   purpose: 'case-read',
 })
 const privacyPresentationJson = ref('')
+const privacyQualification = ref(null)
 const anonymousAccessForm = reactive({
   deptRole: 'court',
   authScope: 'case',
@@ -973,10 +984,19 @@ const anonymousAccessForm = reactive({
 
 const revocationForm = reactive({
   vcID: 'vc-case-read-001',
-  eventType: 'credential_invalid',
-  reason: '',
+  groupID: '',
+  eventType: '',
+  eventIssuerDID: '',
   draftID: '',
 })
+const revocationDraft = ref(null)
+const revocationCommittee = ref(null)
+const revocationHash = ref('')
+const approvalCount = computed(() => Object.keys(revocationDraft.value?.approvals || {}).length)
+const approvalThreshold = computed(() => revocationCommittee.value?.threshold || 0)
+const approvalPercentage = computed(() =>
+  approvalThreshold.value ? Math.min(100, Math.round(100 * approvalCount.value / approvalThreshold.value)) : 0,
+)
 
 const prettyResult = computed(() => JSON.stringify(lastResult.value, null, 2))
 const jointStep = computed(() => {
@@ -1010,6 +1030,9 @@ const loadActorOptions = async () => {
       const name = actorDisplayName(actor)
       return { ...actor, name, label: `${name}（${actor.alias}）` }
     })
+    if (!revocationForm.eventIssuerDID) {
+      revocationForm.eventIssuerDID = actors.find((actor) => actor.alias === 'bootstrap')?.did || ''
+    }
     if (!actorOptions.value.some((actor) => actor.alias === actorAlias.value)) {
       actorAlias.value = actorOptions.value[0].alias
       saveActor()
@@ -1078,10 +1101,6 @@ const execute = async (key, title, requestTask) => {
   }
 }
 
-const showPending = (feature) => {
-  ElMessage.info(`${feature}已完成页面排版，接口将在确认样式后接入`)
-}
-
 const issueAnonymousNonce = async () => {
   if (
     !required(
@@ -1094,13 +1113,33 @@ const issueAnonymousNonce = async () => {
     presentationNonce({ ...anonymousNonceForm }, actorAlias.value),
   )
   if (result?.code === 0) {
+    privacyPresentationJson.value = ''
+    privacyQualification.value = null
     privacyPresentationForm.nonce = result.data?.nonce || ''
     privacyPresentationForm.verifierDID = anonymousNonceForm.verifierDID
     privacyPresentationForm.purpose = anonymousNonceForm.purpose
   }
 }
 
-const previewPrivacyVpGeneration = () => {
+const addPrivacyMember = async () => {
+  const groupID = anonymousMembership.groupID.trim()
+  const vcID = credentialQueryId.value.trim()
+  if (!required([groupID, vcID], '请填写群组 ID 和 VC ID')) return
+  const group = await execute('queryPrivacyGroup', '查询匿名资格群组', () =>
+    privacyGroupQuery(groupID, actorAlias.value),
+  )
+  if (group?.code !== 0) return
+  const result = await execute('addPrivacyMember', '加入匿名资格群组', () =>
+    privacyGroupMember({ groupID, vcID }, actorAlias.value),
+  )
+  if (result?.code === 0) {
+    privacyPresentationForm.groupID = groupID
+    revocationForm.groupID = groupID
+    revocationForm.vcID = vcID
+  }
+}
+
+const generatePrivacyVp = async () => {
   if (
     !required(
       [
@@ -1114,13 +1153,62 @@ const previewPrivacyVpGeneration = () => {
     )
   )
     return
-  showPending('匿名凭证展示生成')
+  const result = await execute('generatePrivacyVp', '生成匿名凭证展示', () =>
+    privacyPresentationGenerate({ ...privacyPresentationForm }, actorAlias.value),
+  )
+  if (result?.code === 0) {
+    if (!result.data?.vp || !result.data?.qualification) {
+      ElMessage.error('匿名凭证展示响应不完整')
+      return
+    }
+    privacyPresentationJson.value = JSON.stringify(result.data.vp)
+    privacyQualification.value = result.data?.qualification || null
+  }
 }
 
-const previewPrivacyVpVerification = () => {
-  if (!required([privacyPresentationJson.value], '请先生成匿名凭证展示')) return
-  showPending('匿名资格验证')
+const verifyPrivacyVp = async () => {
+  if (!privacyPresentationJson.value || !privacyQualification.value) {
+    ElMessage.warning('请先生成匿名凭证展示')
+    return
+  }
+  const body = {
+    vp: JSON.parse(privacyPresentationJson.value),
+    qualification: privacyQualification.value,
+    access: {
+      deptRole: anonymousAccessForm.deptRole.trim(),
+      authScope: anonymousAccessForm.authScope.trim(),
+      dataLevel: anonymousAccessForm.dataLevel.trim(),
+      action: anonymousAccessForm.action.trim(),
+      atTime: Math.floor(Date.now() / 1000),
+    },
+  }
+  const result = await execute('verifyPrivacyVp', '验证匿名资格', () =>
+    privacyPresentationVerify(body, actorAlias.value),
+  )
+  if (result?.code === 0 && result.data?.keyImage) {
+    const image = await execute('queryPrivacyKeyImage', '查询匿名凭证使用状态', () =>
+      privacyKeyImage(result.data.keyImage, actorAlias.value),
+    )
+    if (image?.code === 0) {
+      const verified = result.data.verified === true && image.data?.used === true
+      lastAction.value = '匿名资格验证'
+      lastResult.value = { code: verified ? 0 : -1,
+        message: verified ? 'success' : '匿名验证或密钥映像状态尚未确认',
+        requestId: result.requestId,
+        data: { verified: result.data.verified, keyImageUsed: image.data?.used,
+          keyImage: result.data.keyImage } }
+    }
+  }
 }
+
+watch(
+  () => [privacyPresentationForm.groupID, privacyPresentationForm.holderDID,
+    privacyPresentationForm.verifierDID, privacyPresentationForm.nonce, privacyPresentationForm.purpose],
+  () => {
+    privacyPresentationJson.value = ''
+    privacyQualification.value = null
+  },
+)
 
 const generateIdentity = async () => {
   if (
@@ -1304,6 +1392,118 @@ const verifyPresentation = async () => {
   await execute('verifyPresentation', '身份与权限联合验证', () =>
     presentationVerify(body, actorAlias.value),
   )
+}
+
+const createRevocation = async () => {
+  const groupID = revocationForm.groupID.trim()
+  const vcID = revocationForm.vcID.trim()
+  const eventType = revocationForm.eventType.trim()
+  const eventIssuerDID = revocationForm.eventIssuerDID.trim()
+  if (!required([groupID, vcID, eventType, eventIssuerDID], '请填写待撤销 VC、群组和事件类型')) return
+
+  const issuer = await execute('queryEventIssuer', '查询撤销事件配置', () =>
+    revocationIssuerQuery(eventType, eventIssuerDID, actorAlias.value),
+  )
+  if (issuer?.code !== 0) return
+  if (issuer.data?.status !== 'Active') {
+    ElMessage.error('撤销事件签发方尚未激活')
+    return
+  }
+  const committee = await execute('queryRevocationCommittee', '查询撤销委员会', () =>
+    revocationCommitteeQuery(groupID, actorAlias.value),
+  )
+  if (committee?.code !== 0) return
+  if (committee.data?.status !== 'Active') {
+    ElMessage.error('撤销委员会尚未激活')
+    return
+  }
+  revocationCommittee.value = committee.data
+
+  const result = await execute('createRevocation', '创建撤销申请', () =>
+    revocationRequestCreate({ groupID, vcID, eventIssuerDID, eventType,
+      scopeType: 'group', scopeID: groupID }, actorAlias.value),
+  )
+  if (result?.code === 0) {
+    revocationDraft.value = result.data
+    revocationForm.draftID = result.data?.id || ''
+    revocationHash.value = ''
+  }
+}
+
+const approveRevocation = async () => {
+  const draftID = revocationForm.draftID.trim()
+  if (!required([draftID], '请先创建或查询撤销申请')) return
+  const result = await execute('approveRevocation', '批准撤销申请', () =>
+    revocationRequestApprove(draftID, actorAlias.value),
+  )
+  if (result?.code === 0) revocationDraft.value = result.data?.draft || revocationDraft.value
+}
+
+const queryRevocation = async () => {
+  const draftID = revocationForm.draftID.trim()
+  if (!required([draftID], '请输入撤销申请 ID')) return
+  const draftResponse = await execute('queryRevocation', '查询撤销申请', () =>
+    revocationRequestQuery(draftID, actorAlias.value),
+  )
+  if (draftResponse?.code !== 0) return
+  const draft = draftResponse.data
+  revocationDraft.value = draft
+  revocationForm.groupID = draft.groupID
+  revocationForm.vcID = draft.vcID
+  revocationForm.eventType = draft.credential?.eventType || revocationForm.eventType
+  revocationForm.eventIssuerDID = draft.credential?.issuerDID || revocationForm.eventIssuerDID
+  const committee = await execute('queryRevocationCommittee', '查询撤销委员会', () =>
+    revocationCommitteeQuery(draft.groupID, actorAlias.value),
+  )
+  if (committee?.code !== 0) return
+  revocationCommittee.value = committee.data
+  if (draft.status !== 'Executed') {
+    lastAction.value = '撤销申请查询'
+    lastResult.value = draftResponse
+    return
+  }
+  const vc = await execute('queryRevokedCredential', '查询撤销后 VC', () =>
+    credentialQuery(draft.vcID, actorAlias.value),
+  )
+  if (vc?.code !== 0) return
+  const logs = await execute('queryRevocationLogs', '查询撤销记录', () =>
+    revocationLogs(draft.vcID, actorAlias.value),
+  )
+  if (logs?.code !== 0) return
+  const hash = revocationHash.value || logs.data?.logs?.[0]?.credentialHash
+  let consumed = null
+  if (hash) {
+    const result = await execute('queryRevocationConsumed', '查询撤销凭证状态', () =>
+      revocationConsumed(hash, actorAlias.value),
+    )
+    if (result?.code !== 0) return
+    consumed = result.data
+    revocationHash.value = hash
+  }
+  lastAction.value = '撤销结果查询'
+  const complete = vc.data?.proof?.status === 'Revoked'
+    && Array.isArray(logs.data?.logs) && logs.data.logs.length > 0
+    && consumed?.consumed === true
+  lastResult.value = { code: complete ? 0 : -1,
+    message: complete ? 'success' : '撤销结果尚未全部确认', requestId: logs.requestId,
+    data: { draft, committee: committee.data, vcProof: vc.data?.proof,
+      logs: logs.data?.logs, consumed } }
+}
+
+const executeRevocation = async () => {
+  const draftID = revocationForm.draftID.trim()
+  if (!approvalThreshold.value || approvalCount.value < approvalThreshold.value) {
+    ElMessage.warning('委员会批准尚未达到门限')
+    return
+  }
+  const result = await execute('executeRevocation', '执行撤销', () =>
+    revocationExecute(draftID, actorAlias.value),
+  )
+  if (result?.code === 0) {
+    revocationHash.value = result.data?.credentialHash || ''
+    revocationDraft.value = { ...revocationDraft.value, status: 'Executed' }
+    await queryRevocation()
+  }
 }
 
 onMounted(loadActorOptions)

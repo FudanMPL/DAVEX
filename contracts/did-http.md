@@ -1,4 +1,4 @@
-# DAVEX DID 后端 HTTP 契约（第一阶段）
+# DAVEX DID 后端 HTTP 契约
 
 ## 1. 范围
 
@@ -19,7 +19,7 @@ DAVEX 前端
 
 ### 2.1 DAVEX Java 服务
 
-- Center 当前端口：`9900`
+- Center 当前本地端口：`9999`（以实际运行配置为准）
 - Agent 当前端口：`8080`
 - DID 公开 API 前缀：`/api/v1/did`
 
@@ -149,6 +149,26 @@ Java 对前端统一返回：
 | `POST /api/v1/did/presentation/verify` | `POST /api/vp/verify` | 是 |
 
 center 和 agent 均可暴露上述同名接口。是否允许执行由 actor 及链上角色决定，不由 center/agent 类型决定。
+
+### 5.1 匿名认证与撤销增量映射（本阶段由 Center 暴露）
+
+| DAVEX Center 接口 | Go backend 接口 | 执行 actor |
+|---|---|---|
+| `GET /api/v1/did/privacy/group?groupID=...` | `GET /api/privacy/group?groupID=...` | 任一已认证 actor |
+| `POST /api/v1/did/privacy/group/member` | `POST /api/privacy/group/member` | 群组签发方 `issuer` |
+| `POST /api/v1/did/privacy/presentation/generate` | `POST /api/privacy/vp/generate` | 持有者 `holder` |
+| `POST /api/v1/did/privacy/presentation/verify` | `POST /api/privacy/vp/verify` | 验证方 `verifier` |
+| `GET /api/v1/did/privacy/keyimage?value=...` | `GET /api/privacy/keyimage?value=...` | 任一已认证 actor |
+| `GET /api/v1/did/revocation/issuer?eventType=...&issuerDID=...` | `GET /api/revocation/issuer` | 任一已认证 actor |
+| `GET /api/v1/did/revocation/committee?groupID=...` | `GET /api/revocation/committee` | 任一已认证 actor |
+| `POST /api/v1/did/revocation/requests` | `POST /api/revocation/requests` | 事件签发方 `bootstrap` |
+| `GET /api/v1/did/revocation/requests/{draftID}` | `GET /api/revocation/requests/{draftID}` | 任一已认证 actor |
+| `POST /api/v1/did/revocation/requests/{draftID}/approvals` | 同路径的 Go 接口 | 当前有效委员 `issuer`/`verifier` |
+| `POST /api/v1/did/revocation/execute` | `POST /api/revocation/execute` | 演示由 `bootstrap` 执行 |
+| `GET /api/v1/did/revocation/logs?vcID=...` | `GET /api/revocation/logs?vcID=...` | 任一已认证 actor |
+| `GET /api/v1/did/revocation/consumed?hash=...` | `GET /api/revocation/consumed?hash=...` | 任一已认证 actor |
+
+以上新接口不自动扩展旧 `/api/v1/control/**` 或 `DAVEX_agent` 路由。Java 只校验必填查询参数并转发 JSON，不生成签名、不代替委员批准。`X-DID-Actor` 仍是候选身份：本地演示使用管理员 Go token 切换不同 SDK actor，不能把下拉框视为生产授权。
 
 ## 6. 请求定义
 
@@ -393,6 +413,40 @@ Content-Type: application/json
 ```
 
 `vp` 精确字段以 Go `protocol.StandardVP` 的 JSON 为准。Java 第一阶段不解析或重写密码学字段，只进行 JSON 透传和统一响应适配。
+
+### 6.12 匿名资格及匿名 VP
+
+入群请求 `POST /api/v1/did/privacy/group/member`：`{"groupID":"group-...","vcID":"vc-..."}`。VC 必须有效、允许匿名且与群组策略相符；群组由受控初始化预先创建。`GET /privacy/group` 返回 `groupID`、`policyID`、`memberEpoch`、`lHash`、`status` 等链上数据。
+
+匿名认证沿用 6.9 的 nonce，目的 `purpose` 必须一致。持有者生成请求：
+
+```json
+{"vpID":"pvp-...","groupID":"group-...","holderDID":"did:...:holder","verifierDID":"did:...:verifier","nonce":"nonce-...","purpose":"davex-anonymous"}
+```
+
+`POST /privacy/presentation/generate` 成功的 `data` 含 `vp` 和 `qualification`。`holderDID` 仅用于 Go 定位本地 LSAG 私钥，不得放进最终匿名 VP。验证方将两者原样回传，并加访问条件：
+
+```json
+{"vp":{},"qualification":{},"access":{"deptRole":"community_correction_officer","authScope":"community_correction","dataLevel":"restricted","action":"read","atTime":1791440000}}
+```
+
+`vp`、`qualification` 以生成接口实际返回对象为准。成功时 `data.verified=true` 且有 `data.keyImage`；`GET /privacy/keyimage?value=...` 返回 `data.used=true`。同一个 VP 重放应失败，验证结果不应泄露持有者 DID 或 VC ID。nonce 与密钥映像由现有合约消费，Java/前端不得本地伪造成功。
+
+### 6.13 撤销申请、批准和执行
+
+群组对应的事件签发方白名单与 2-of-2 委员会由受控演示准备创建，普通页面只查询其状态。`GET /revocation/issuer` 用 `eventType`、`issuerDID`，`GET /revocation/committee` 用 `groupID`。
+
+`POST /api/v1/did/revocation/requests` 的请求字段：
+
+```json
+{"groupID":"group-...","vcID":"vc-...","eventIssuerDID":"did:...:governance","eventType":"event-...","scopeType":"group","scopeID":"group-..."}
+```
+
+`draftID` 可选，省略时由 Go 生成。成功返回 `data.id`、`data.status="Pending"`、`data.approvals`。页面中的事件类型就是已登记的撤销原因类型；补充说明不属于现有合约或 Go 草案字段，不得声称已持久化。`GET /revocation/requests/{draftID}` 返回真实草案；委员会 `threshold` 由 `GET /revocation/committee?groupID=...` 读取，批准数由草案 `approvals` 数量得出。
+
+每位委员分别用自身 actor 调用 `POST /revocation/requests/{draftID}/approvals`，请求体 `{}`；同一委员不能重复批准。达到门限后调用 `POST /revocation/execute`，请求体 `{"draftID":"..."}`。这是不可逆链上操作，失败或超时应先查询草案、VC 和日志，不能盲目重试。成功返回 `data.vcProof.status="Revoked"`、`data.group`、`data.credentialHash`、`data.log`。最终再次查询 VC、群组、撤销日志和 consumed 状态；群组 epoch 应增长、`lHash` 应改变，已撤销 VC 不可再生成新的匿名 VP。
+
+新增接口沿用 4.1 的 Java 错误码。常见 Go `upstreamCode` 包括 `MEMBER_BINDING_NOT_FOUND`、`CONTRACT_REJECTED`、`NOT_COMMITTEE_MEMBER`、`THRESHOLD_NOT_MET`；具体错误以 Go 实际响应为准，不在 Java 转成成功。
 
 ## 7. Go backend 原始响应
 

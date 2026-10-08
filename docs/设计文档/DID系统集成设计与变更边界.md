@@ -1,6 +1,6 @@
 # DAVEX DID 系统集成设计与变更边界
 
-> 文档状态：前端页面基线已确认；已有接口待真实链路验证，匿名认证与撤销接入待完成
+> 文档状态：DAVEX DID 匿名认证与凭证撤销已完成受控本机页面闭环；标准 VP 已经 Center 接口回归，页面操作仍待单独验收
 >
 > 适用页面：`DAVEX_ui` 的 `/did` 路由
 >
@@ -12,7 +12,7 @@
 
 ## 1. 文档目的
 
-本文档记录已经确认并完成的 DID 前端结构、各功能的正确业务流程、当前实现状态以及后续 Java/Go 接入边界，供后续编码、联调和验收使用。
+本文档记录 DID 前端结构、业务流程、现有实现和变更边界；具体启动步骤、测试数据与链上实测证据见同目录的 [《DID匿名认证与凭证撤销联调操作手册》](DID匿名认证与凭证撤销联调操作手册.md)。本文所说的“通过”仅指 2026-10-08 受控本机演示，不代表生产级多用户授权已完成。
 
 本文档中的“合约”如无特别说明，均指 ChainMaker 上的 `did/simple-did` 智能合约；HTTP 请求字段和路径属于“接口契约”，两者不得混淆。
 
@@ -204,10 +204,10 @@
 
 ### 3.5 凭证撤销
 
-普通用户主流程：
+页面主流程（受控演示中需切换具备相应权限的 actor）：
 
 1. 选择需要撤销的 VC。
-2. 选择撤销原因并填写补充信息。
+2. 选择匿名资格群组，填写链上已登记的撤销事件类型；必要时在高级设置中确认事件签发方 DID。
 3. 创建撤销申请。
 4. 展示批准数量和门限。
 5. 委员通过右上角 actor 切换分别批准。
@@ -231,7 +231,9 @@
 - [x] 可验证凭证管理中增加“匿名资格设置”入口。
 - [x] 删除非必要说明句和卡片右上角重复文字标签。
 - [x] 操作结果改为业务摘要加可折叠技术详情。
-- [x] 前端生产构建通过。
+- [x] 匿名资格入群、PrivacyVP 生成/验证和撤销申请/批准/执行/查询按钮接入真实 DAVEX DID 链路。
+- [x] nonce、PrivacyVP、qualification 和撤销草案 ID 在页面流程中自动传递；批准数和门限读取真实查询结果。
+- [x] 前端生产构建和 Center Maven package 通过。
 
 ### 4.2 已有且可继续复用的接口
 
@@ -242,26 +244,20 @@
 - 标准 VP 生成和验证。
 - actor session、角色查询和更新。
 
-### 4.3 尚未接入 DAVEX DID Java 链路
+### 4.3 已接入并验证的 DAVEX DID 链路
 
-- 匿名资格群组查询。
-- 将 VC 加入匿名资格群组。
-- 匿名凭证展示生成。
-- 匿名凭证展示验证。
-- 密钥映像查询。
-- 撤销申请创建和查询。
-- 委员批准。
-- 执行撤销。
-- 撤销记录与最终 VC 状态查询。
+- `contracts/did-http.md` 已定义 Center `9999` 及匿名群组、PrivacyVP、密钥映像、撤销事件签发方/委员会查询、草案/批准/执行/日志/consumed 的 Java↔Go 映射。
+- `DAVEX_base` 的 `DidService` 和 Center DID Controller 已增加对应薄转发；Go backend、SDK、协议和链上合约无需改动。
+- `/did` 已通过页面实际完成新 VC 入群、nonce 签发、PrivacyVP 生成与验证、双 actor 门限批准、撤销执行及结果查询。链上复核确认 VC 为 `Revoked`、群组成员移除、撤销日志和 consumed 状态存在；新 nonce 下已撤销成员不能再生成 PrivacyVP。
+- Center 接口另行验证了 DID 查询、VC 验证及标准 VP 联合验证；**标准 VP 尚未作为 `/did` 页面点击流程单独验收**，不能把接口回归写成页面回归。
+- Go 停止时 DID ready 报错，而 Center 非 DID `/api/v1/health` 仍成功；其他业务页面尚未逐页回归。
 
-当前前端状态：匿名认证第一步复用已有 nonce 接口；匿名资格绑定、匿名凭证展示生成/验证和全部撤销按钮仍是页面流程占位，不会伪造成功响应。
+### 4.4 本机演示环境与已知差异
 
-### 4.4 当前联调前提与已知差异
-
-- 参考项目现有 `backend/configs/backend.yml`、各 actor 的 ChainMaker SDK 配置及 `backend/data/backend-state.json`；DAVEX 的 `did/backend/configs/backend.yml`、SDK 实际配置和本地状态尚未准备。示例 YAML 中的 DID、证书路径和 token 哈希不能直接用于真实联调。
-- 参考项目当前配置的 `bootstrap`、`issuer`、`holder`、`verifier` 对应现有 `did:govdid:smoke:*` 身份；DAVEX 页面预填的 `did:gov:*`、策略 ID 和 VC ID 只是表单示例，不能假定已存在于链上。
-- DAVEX Center 本地配置端口为 `9999`，而 `contracts/did-http.md` 仍写 `9900`；本地联调应以实际运行端口为准，并在扩展接口契约时修正文档。前端缺少本地 `env-config.js` 时，请求默认指向远程 `10.176.37.50:4090`，不会自动连接本地 Center。
-- 代码路径、接口和静态构建存在，不等于真实链路已通过。必须分别验证 Go、Java 和页面实际请求，不将参考项目的 mock 前端或构建通过当作功能验收。
+- 复用参考项目已部署的 ChainMaker `simpleDidTest1` 合约和四个 `did:govdid:smoke:*` actor。DAVEX 的 Go 配置、状态副本、备份与演示 token 位于用户私有 DAVEX 目录，权限为目录 `0700`、文件 `0600`；不入 Git、不与参考 backend 共写状态文件。SDK 配置仍引用参考项目证书路径，迁移机器或移动参考项目时需要重新配置。
+- 本轮使用管理员演示 token 在页面切换 `bootstrap`、`issuer`、`holder`、`verifier`，各 actor 对应独立链上身份。页面下拉框不是普通用户授权；生产接入前必须建立 DAVEX 登录身份与 actor 的服务端绑定。
+- Center 本地端口和 HTTP 契约均已对齐为 `9999`；Go 为 `8081`，Vite 为 `5173`。未跟踪的本机 `DAVEX_ui/public/env-config.js` 指向本地 Center，不随代码提交；新环境仍需自行准备运行时 API 地址。
+- 页面预填 `did:gov:*`、策略 ID 和 VC ID 仅为示例，不可当作链上已有资源。链上写入只使用本轮唯一测试 ID；撤销不可逆，具体数据和复核步骤以联调操作手册为准。
 
 ## 5. 技术架构与职责边界
 
@@ -327,19 +323,19 @@ Java 不实现 Merkle、P-256、DID-LSAG、Schnorr 或 ChainMaker 合约逻辑�
 
 ### 5.6 复用现有链、合约与本地状态
 
-参考项目的 `simple-did` 是当前链上合约的实现依据；DAVEX 不需要为了页面简化而重新部署。能否复用**当前部署实例**，仍须以实际节点地址、链 ID、合约名、SDK 身份、合约路由和 `/api/ready` 及真实查询结果验证，不能只凭源码相似作出“已连接”的结论。
+参考项目的 `simple-did` 是当前链上合约的实现依据；本轮已用实际 SDK 身份、`/api/ready`、链上查询和写入交易验证 DAVEX 能复用现有 `simpleDidTest1` 部署实例，无需修改或重新部署合约。新环境仍须逐项核对节点、链 ID、合约名和证书，不能只凭源码相似作出“已连接”的结论。
 
-Go backend 本地状态保存 DID 协议私钥、完整策略及证明、完整 VC 和撤销草案；链上只保存对应锚、角色和最终状态。因此仅复用 SDK 连接配置，不能自动生成现有 DID 的 VP 或管理已有 VC。推荐在不改变参考项目工作区的前提下，为 DAVEX 后端准备**隔离的受限权限状态副本和匹配的 actor/SDK 配置**；配置、token 明文、证书、私钥和状态文件均不得提交仓库。不得让两个 backend 同时写同一状态文件。使用隔离副本做写链测试时采用唯一测试 ID，并核对源项目与 DAVEX 状态可能发生的分叉。
+Go backend 本地状态保存 DID 协议私钥、完整策略及证明、完整 VC 和撤销草案；链上只保存对应锚、角色和最终状态。因此仅复用 SDK 连接配置，不能自动生成现有 DID 的 VP 或管理已有 VC。本轮已在不改变参考项目工作区的前提下，为 DAVEX 后端准备**隔离的受限权限状态副本和匹配的 actor/SDK 配置**。配置、token 明文、证书、私钥和状态文件均不得提交仓库；不得让两个 backend 同时写同一状态文件。使用隔离副本做写链测试时采用唯一测试 ID，并注意源项目与 DAVEX 状态可能发生的分叉。
 
 已有 ChainMaker 证书若已控制一个链上 DID，可用于该 DID 的查询和后续授权操作；要演示“生成并注册新的 DID”，须准备未绑定其他 DID 的独立 ChainMaker 身份及相应 actor 配置，不能用已绑定地址重复注册。
 
-DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go backend 仍以 token、actor 的独立 SDK 证书和链上权限校验。用管理员 token 切换多个 actor 只适合受控本地演示，不应视为 DAVEX 普通登录用户已获得安全的多主体授权。第一轮以 Center 接入为准；只有确认需要 agent 提供 DID 页面时再同步扩展 agent。
+DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go backend 仍以 token、actor 的独立 SDK 证书和链上权限校验。用管理员 token 切换多个 actor 只适合受控本地演示，不应视为 DAVEX 普通登录用户已获得安全的多主体授权。本轮只接入 Center；只有确认 agent 也需要 DID 能力时才扩展 agent。
 
 ## 6. 接口契约改造范围
 
-实施匿名认证与撤销前，必须先更新 `contracts/did-http.md`，再实现 Java 和前端调用。
+本轮已先更新 `contracts/did-http.md`，再实现 Java 和前端调用；后续调整接口仍遵循“先契约、后实现”。
 
-至少需要定义以下操作的 path、method、actor、请求字段、响应字段和错误码：
+契约已定义以下操作的 path、method、actor、请求字段、响应字段和错误码：
 
 - 查询匿名资格群组。
 - 将 VC 加入匿名资格群组。
@@ -347,9 +343,10 @@ DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go back
 - 验证匿名凭证展示。
 - 查询密钥映像消费状态。
 - 创建和查询撤销申请。
+- 查询撤销事件签发方与委员会。
 - 委员批准撤销申请。
 - 执行撤销。
-- 查询撤销记录和 VC 最终状态。
+- 查询撤销记录、凭证哈希消费状态和 VC 最终状态。
 
 接口原则：
 
@@ -358,9 +355,9 @@ DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go back
 - 不为了减少按钮数量绕过 actor 隔离。
 - 不新增消息队列、工作流引擎、网关或独立密钥服务。
 
-撤销页面当前只填写 VC、事件类型、原因等业务字段，而 Go 创建草案还需要群组、事件签发方及撤销作用域。接入时应从受控预置数据与当前 actor 自动确定这些值，或在必要时放入高级设置；“原因”若需要持久化，应先在 HTTP/本地状态契约中定义，不能假装已写入现有链上合约。批准数量和门限必须读取 Go 状态，不使用固定页面数字。
+撤销页面填写 VC、群组及已登记的事件类型，事件签发方 DID 放在高级设置；撤销作用域使用群组。现有合约不保存自由文本“补充说明”，因此已移除原页面字段，不能把未持久化内容显示为已提交。批准数量和门限从 Go 的草案与委员会查询结果读取，不使用固定页面数字。
 
-## 7. 后续计划修改范围
+## 7. 本轮变更范围与后续边界
 
 ### 7.1 接口契约
 
@@ -370,7 +367,7 @@ DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go back
 
 - `DAVEX_ui/src/api/did.js`
 - `DAVEX_ui/src/views/did/didWorkspace.vue`
-- `DAVEX_ui/src/views/did/components/**`（仅在拆分后能明显降低复杂度时新增）
+- 本轮未新增 `DAVEX_ui/src/views/did/components/**`；仅在后续拆分能明显降低复杂度时考虑。
 
 保持不变：
 
@@ -381,34 +378,27 @@ DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go back
 
 - `DAVEX_base/src/main/java/DavexBase/did/**`
 - `DAVEX_center/src/main/java/DavexCenter/module/did/**`
-- `DAVEX_agent/src/main/java/DavexAgent/module/did/**`（仅当 agent 确实需要同步暴露时）
+- `DAVEX_agent/src/main/java/DavexAgent/module/did/**` 本轮未修改；仅当 agent 确实需要同步暴露时考虑。
 
 ### 7.4 Go
 
-- `did/backend/**`（优先复用，必要时补充查询或最小编排）
-- `did/protocol/**`（原则上不修改，继续复用现有链上协议模型；新增 HTTP DTO 放在 backend 层）
-- `did/sdk-go/**`（原则上不修改）
-- `did/simple-did/**`（禁止修改）
+- `did/backend/**`、`did/protocol/**`、`did/sdk-go/**` 本轮均未修改，复用已有实现。
+- `did/simple-did/**` 本轮未修改，后续仍禁止为页面简化而修改。
 
-## 8. 下一阶段实施顺序
+## 8. 已实施顺序与后续工作
 
-先让已存在的 DID、策略、VC 和标准 VP 链路真实运行，再补匿名与撤销；不要为了测试匿名功能先改动合约或 DAVEX 其他业务。
+### 8.1 本轮已完成的受控联调
 
-### 8.1 第一轮：现有接口端到端联调
+1. 核对现有节点、`simpleDidTest1` 合约与四个 actor 的 SDK 身份，备份并隔离 Go 私密状态；Go `/api/ready` 和 Center `/api/v1/did/ready` 均通过。
+2. 先直接用 Go 接口测试新策略、VC、群组、匿名 VP、密钥映像防重放及 2-of-2 撤销，再按 HTTP 契约接入 Center 和 `/did` 页面。
+3. 经 `/did → Center → Go → ChainMaker` 完成新测试 VC 的匿名认证与撤销；通过链上查询复核 `Revoked`、群组成员移除、日志和 consumed，并用新 nonce 确认撤销后不能重新生成匿名 VP。
+4. 经 Center 接口回归已有 DID 查询、VC 验证、标准 VP 联合验证；验证 holder 越权入群被拒绝，以及 Go 暂停时 Center 非 DID 健康接口仍可用。详细 ID、交易和操作顺序见联调操作手册。
 
-1. 确认参考项目正在使用的 ChainMaker 节点、链 ID、已部署合约名及每个 actor 的 SDK 身份；为 `did/backend` 准备与链上既有 DID 相匹配的私有配置和隔离的本地状态。操作前备份状态，不直接修改参考项目；不得将密钥或 token 写入 Git。
-2. 启动 DAVEX 的 `did/backend`（默认 `8081`）。先检查公开的 `GET /api/health`，再带 actor token 检查 `GET /api/ready`、`GET /api/system/session` 和现有 DID 查询。`health` 只证明 HTTP 存活，`ready` 才检查链和合约；必要时用参考 backend 的同类只读结果定位配置差异。
-3. 启动 DAVEX Center，设置 `DID_ENABLED=true`、`DID_BACKEND_URL=http://localhost:8081`、`DID_BACKEND_TOKEN`。先确认 Center 自身所需的数据库等依赖可用，再经实际端口（当前本地配置 `9999`）检查 `/api/v1/did/health` 和 `/api/v1/did/ready`。本阶段不要求启动 `DAVEX_agent`。
-4. 将 DAVEX 前端的运行时 API 地址指向该 Center，启动 `/did` 页面；从 session 加载真实 actor 列表，测试时使用实际已存在的 DID/策略/VC ID，不直接采用页面示例值。
-5. 按“查询现有 DID → 查询角色/策略 → 查询与验证 VC → 验证方发起联合验证 → 持有者生成标准 VP → 验证方验证”完成第一条闭环。若要测试新 DID 注册，另备未绑定 DID 的 ChainMaker 证书与 actor。
+### 8.2 尚需单独验收或产品化的事项
 
-### 8.2 第二轮：匿名认证与撤销
-
-1. 先在 `contracts/did-http.md` 固化匿名资格绑定、PrivacyVP、撤销申请/批准/执行/查询的 Java↔Go path、字段、actor、响应和错误码，同时纠正已发现的 Center 端口差异。
-2. 用 `did/backend` 已有接口直接验证匿名最小闭环：受控初始化资格群组、签发允许匿名的 VC、由签发方绑定成员、验证方签发 nonce、持有者生成 `PrivacyVP`、验证方提交资格和访问条件完成链上验证；确认 nonce 与上下文化密钥映像被消费。
-3. 直接验证撤销最小闭环：受控预置事件签发方和委员会、创建草案、不同委员 actor 独立批准、达到门限后执行、查询 VC 和群组/撤销记录。不得通过 Java 或前端代替委员签名。
-4. 在 `DAVEX_base` 与 Center DID Controller 中补最薄的 HTTP 转发，再扩展 `DAVEX_ui/src/api/did.js`，替换匿名资格绑定、隐私 VP 与撤销页面的占位操作；自动传递 nonce、VP、qualification 和草案 ID，普通用户界面不增加系统管理导航。
-5. 验证不同 actor 确实使用不同的 ChainMaker 证书与 DID 密钥、无权限操作被拒绝；停止 DID backend 后检查只有 DID 功能失败，DAVEX 其他页面仍可正常运行。
+1. 在 `/did` 页面单独点击完成 DID/策略/VC/标准 VP 的回归，并检查文件传输、比对、MPC、联邦学习等非 DID 页面；本轮不能把接口或构建验证扩写为这些页面的实测。
+2. 若要面向真实多用户开放，设计 DAVEX 登录身份与 actor 的服务端授权绑定、token/证书轮换和密钥托管，替换共享管理员演示 token；评估页面是否应继续允许用户切换所有 actor。
+3. 固化受控初始化与服务重启方式；如迁移证书路径、机器或链环境，重新核验本地完整状态与链上锚一致。需要 agent 暴露 DID 时再另行评估，不在本轮范围内。
 
 ## 9. 验收标准
 
@@ -424,32 +414,31 @@ DAVEX 前端的 actor 下拉框仅选择执行主体，不构成授权。Go back
 ### 9.2 功能闭环
 
 - [x] DID、策略、VC 和标准 VP 保留现有调用入口。
-- [ ] Go `/api/ready` 和 Java `/api/v1/did/ready` 在现有链与合约上实际成功。
-- [ ] 经 DAVEX `/did` 页面完成至少一条现有 DID 查询、VC 验证和标准 VP 联合验证；不以接口存在或构建通过代替验收。
-- [ ] VC 可以通过 DAVEX DID 链路加入匿名资格群组。
-- [ ] 匿名认证实际返回由 Go backend 生成的 `PrivacyVP`。
-- [ ] 最终 `PrivacyVP` 和验证结果不包含 holder DID 或具体 VC。
-- [ ] 匿名验证会校验并消费 nonce 与上下文化密钥映像。
-- [ ] 凭证撤销可以完成申请、独立批准、执行和结果查询。
-- [ ] 多 actor 操作使用各自独立的 ChainMaker 证书和 DID 密钥。
-- [ ] 测试使用的后端状态和私钥不进入 Git、不与参考 backend 并发共享同一状态文件。
+- [x] Go `/api/ready` 和 Java `/api/v1/did/ready` 在现有链与合约上实际成功。
+- [x] 经 Center 接口完成 DID 查询、VC 验证和标准 VP 联合验证。
+- [ ] 经 DAVEX `/did` 页面单独完成 DID 查询、VC 验证和标准 VP 联合验证；不以接口存在或构建通过代替验收。
+- [x] VC 通过 DAVEX `/did` 页面加入匿名资格群组。
+- [x] 匿名认证实际返回由 Go backend 生成的 `PrivacyVP`。
+- [x] 最终 `PrivacyVP` 和验证结果不包含 holder DID 或具体 VC。
+- [x] 匿名验证的密钥映像已消费，同一 VP 重放被拒绝；nonce 防重放由现有合约校验。
+- [x] 凭证撤销经页面完成申请、不同 actor 批准、执行和结果查询。
+- [x] 四个演示 actor 使用各自 SDK 配置、证书与 DID 密钥；holder 越权入群被拒绝。
+- [x] 测试使用的后端状态和私钥不进入 Git、不与参考 backend 并发共享同一状态文件。
 
 ### 9.3 兼容性与安全边界
 
-- [ ] 不修改、升级或重新部署 `did/simple-did`。
-- [ ] 不在前端或 Java 保存私钥。
-- [ ] 不修改现有 JWT、ABAC 和 center-agent 交互方式。
-- [ ] DID backend 不可用时只影响 DID 页面。
+- [x] 不修改、升级或重新部署 `did/simple-did`。
+- [x] 不在前端或 Java 保存私钥。
+- [x] 不修改现有 JWT、ABAC 和 center-agent 交互方式。
+- [x] DID backend 停止时 DID ready 失败，Center 非 DID 健康接口仍正常。
 - [ ] 文件传输、比对、MPC 和联邦学习页面保持不变。
 
-## 10. 尚待确认的问题
+## 10. 本轮取舍与后续待定项
 
-1. actor 下拉列表最终完全由 session 接口返回，还是保留固定演示项作为不可用时的回退。
-2. “生成身份材料”和“注册 DID”继续保留两个按钮，还是在接口稳定后合并为一个前端连续操作。
-3. 匿名资格群组由部署初始化脚本创建，还是提供仅管理员可见的高级设置入口。
-4. 匿名资格群组在页面上使用自由输入、可搜索下拉框，还是根据当前 actor 和 VC 自动推荐。
-5. 撤销门限批准在演示时是否要求现场切换多个真实 actor 完成。
-6. `DAVEX_agent` 是否需要与 center 同时暴露匿名认证和撤销接口。
+- actor 列表优先由 session 返回；当前页面保留演示回退项。受控演示通过右上角切换 `issuer`、`verifier`、`holder`、`bootstrap`，不代表生产授权设计。
+- “生成身份材料”和“注册 DID”继续保留两个按钮；匿名资格群组及撤销事件/委员会由 Go 端受控准备，页面只填写群组 ID，不增加系统管理导航。
+- 撤销演示由两个真实委员 actor 分别批准，达到真实门限才执行；不在前端模拟批准。
+- 后续仍需决定：生产 actor 授权与密钥管理、资格群组的初始化/选择体验、是否合并 DID 两步操作，以及 `DAVEX_agent` 是否需要暴露这些接口。
 
 ## 11. 明确不做的事
 

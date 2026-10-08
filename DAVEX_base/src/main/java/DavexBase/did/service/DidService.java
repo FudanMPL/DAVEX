@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 
 @Service
@@ -101,6 +103,77 @@ public class DidService {
 
     public DidApiResponse<JsonNode> verifyPresentation(JsonNode body, DidActorContext context) {
         return forward(context, () -> client.post("/api/vp/verify", body, context));
+    }
+
+    public DidApiResponse<JsonNode> queryPrivacyGroup(String groupId, DidActorContext context) {
+        return getRequired("groupID", groupId, context, "/api/privacy/group");
+    }
+
+    public DidApiResponse<JsonNode> addPrivacyGroupMember(JsonNode body, DidActorContext context) {
+        return forward(context, () -> client.post("/api/privacy/group/member", body, context));
+    }
+
+    public DidApiResponse<JsonNode> generatePrivacyPresentation(JsonNode body, DidActorContext context) {
+        return forward(context, () -> client.post("/api/privacy/vp/generate", body, context));
+    }
+
+    public DidApiResponse<JsonNode> verifyPrivacyPresentation(JsonNode body, DidActorContext context) {
+        return forward(context, () -> client.post("/api/privacy/vp/verify", body, context));
+    }
+
+    public DidApiResponse<JsonNode> queryKeyImage(String value, DidActorContext context) {
+        return getRequired("value", value, context, "/api/privacy/keyimage");
+    }
+
+    public DidApiResponse<JsonNode> queryEventIssuer(String eventType, String issuerDid, DidActorContext context) {
+        if (eventType == null || eventType.isBlank() || issuerDid == null || issuerDid.isBlank()) {
+            return invalidRequest("eventType 和 issuerDID 不能为空", context);
+        }
+        return forward(context, () -> client.get("/api/revocation/issuer",
+                Map.of("eventType", eventType.trim(), "issuerDID", issuerDid.trim()), context, true));
+    }
+
+    public DidApiResponse<JsonNode> queryRevocationCommittee(String groupId, DidActorContext context) {
+        return getRequired("groupID", groupId, context, "/api/revocation/committee");
+    }
+
+    public DidApiResponse<JsonNode> createRevocationRequest(JsonNode body, DidActorContext context) {
+        return forward(context, () -> client.post("/api/revocation/requests", body, context));
+    }
+
+    public DidApiResponse<JsonNode> queryRevocationRequest(String draftId, DidActorContext context) {
+        if (draftId == null || draftId.isBlank()) {
+            return invalidRequest("draftID 不能为空", context);
+        }
+        return forward(context, () -> client.get(revocationRequestPath(draftId), Map.of(), context, true));
+    }
+
+    public DidApiResponse<JsonNode> approveRevocationRequest(String draftId, DidActorContext context) {
+        if (draftId == null || draftId.isBlank()) {
+            return invalidRequest("draftID 不能为空", context);
+        }
+        return forward(context, () -> client.post(revocationRequestPath(draftId) + "/approvals", null, context));
+    }
+
+    public DidApiResponse<JsonNode> executeRevocation(JsonNode body, DidActorContext context) {
+        return forward(context, () -> client.post("/api/revocation/execute", body, context));
+    }
+
+    public DidApiResponse<JsonNode> queryRevocationLogs(String vcId, DidActorContext context) {
+        return getRequired("vcID", vcId, context, "/api/revocation/logs");
+    }
+
+    public DidApiResponse<JsonNode> queryRevocationConsumed(String hash, DidActorContext context) {
+        return getRequired("hash", hash, context, "/api/revocation/consumed");
+    }
+
+    private String revocationRequestPath(String draftId) {
+        return "/api/revocation/requests/"
+                + URLEncoder.encode(draftId.trim(), StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private DidApiResponse<JsonNode> invalidRequest(String message, DidActorContext context) {
+        return DidApiResponse.failure(INVALID_REQUEST, message, null, context.requestId(), null);
     }
 
     private DidApiResponse<JsonNode> getRequired(
