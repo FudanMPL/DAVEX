@@ -8,8 +8,6 @@ import {
   MessageBox,
   Promotion,
   Connection,
-  User,
-  UserFilled
 } from "@element-plus/icons-vue";
 </script>
 
@@ -141,33 +139,6 @@ import {
               <span class="centered-text">隐私保护类案查询</span>
             </el-menu-item>
             -->
-          </el-sub-menu>
-          <!-- 认证管理暂不在导航栏展示，恢复时移除 v-if="false" 即可 -->
-          <el-sub-menu v-if="false" index="/auth">
-            <template #title>
-              <el-icon><UserFilled /></el-icon>
-              <span class="centered-text">认证管理</span>
-            </template>
-            <!-- <el-menu-item index="/auth/tokens">
-              <el-icon><EditPen /></el-icon>
-              <span class="centered-text">Token管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/userManagement">
-              <el-icon><EditPen /></el-icon>
-              <span class="centered-text">认证服务用户管理</span>
-            </el-menu-item> -->
-            <el-menu-item index="/auth/didManagement">
-              <el-icon><Key /></el-icon>
-              <span class="centered-text">DID管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/vcManagement">
-              <el-icon><Stamp /></el-icon>
-              <span class="centered-text">凭证管理</span>
-            </el-menu-item>
-            <el-menu-item index="/auth/privacyVpManagement">
-              <el-icon><Lock /></el-icon>
-              <span class="centered-text">隐私保护凭证管理</span>
-            </el-menu-item>
           </el-sub-menu>
         </el-menu>
       </el-aside>
