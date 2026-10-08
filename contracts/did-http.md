@@ -15,6 +15,8 @@ DAVEX 前端
 
 本契约只为 DAVEX 新增 DID 能力，不改变任何现有 DAVEX 业务接口、JWT、ABAC 或 center-agent 直接 URL 交互方式。
 
+旧实验链路 `goBackend/` 与 Center 的 `/api/v1/control/**`、`/api/v1/control/data/**` 已退役；这些路径不属于本契约，也不再作为 DID 页面入口。Center 的独立健康接口 `GET /api/v1/health` 保留，返回 `code: 0`、`message: "ok"` 与包含服务名和时间的数据，不依赖 Go backend。
+
 ## 2. 服务与配置
 
 ### 2.1 DAVEX Java 服务
@@ -168,7 +170,7 @@ center 和 agent 均可暴露上述同名接口。是否允许执行由 actor �
 | `GET /api/v1/did/revocation/logs?vcID=...` | `GET /api/revocation/logs?vcID=...` | 任一已认证 actor |
 | `GET /api/v1/did/revocation/consumed?hash=...` | `GET /api/revocation/consumed?hash=...` | 任一已认证 actor |
 
-以上新接口不自动扩展旧 `/api/v1/control/**` 或 `DAVEX_agent` 路由。Java 只校验必填查询参数并转发 JSON，不生成签名、不代替委员批准。`X-DID-Actor` 仍是候选身份：本地演示使用管理员 Go token 切换不同 SDK actor，不能把下拉框视为生产授权。
+以上新接口不扩展 `DAVEX_agent` 路由。Java 只校验必填查询参数并转发 JSON，不生成签名、不代替委员批准。`X-DID-Actor` 仍是候选身份：本地演示使用管理员 Go token 切换不同 SDK actor，不能把下拉框视为生产授权。
 
 ## 6. 请求定义
 
