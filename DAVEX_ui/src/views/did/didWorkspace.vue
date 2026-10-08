@@ -1,233 +1,865 @@
 <template>
   <div class="did-workspace">
-    <section class="hero-panel">
-      <div class="hero-copy">
-        <h1>DID 身份与凭证系统</h1>
-        <div class="status-row">
-          <span class="status-pill" :class="serviceState.http">
-            <span class="status-dot"></span>
-            Java 接口：{{ statusText(serviceState.http) }}
-          </span>
-          <span class="status-pill" :class="serviceState.chain">
-            <span class="status-dot"></span>
-            ChainMaker：{{ statusText(serviceState.chain) }}
-          </span>
-        </div>
-      </div>
-      <div class="actor-panel">
-        <label>当前链上执行主体</label>
-        <el-input
+    <section class="workspace-panel">
+      <div class="actor-switcher">
+        <span class="actor-label">当前操作身份</span>
+        <el-select
           v-model="actorAlias"
-          placeholder="例如 bootstrap / governance"
-          clearable
+          class="actor-select"
+          filterable
+          placeholder="请选择操作身份"
           @change="saveActor"
-        />
-        <el-button class="default-button refresh-button" :loading="statusLoading" @click="refreshStatus(true)">
-          刷新状态
-        </el-button>
-      </div>
-    </section>
-
-    <div class="workspace-grid">
-      <section class="operation-panel">
-        <el-tabs v-model="activeTab" class="did-tabs">
-          <el-tab-pane label="身份 DID" name="identity">
-            <div class="tab-intro">
-              <h2>身份生命周期</h2>
+        >
+          <el-option
+            v-for="actor in actorOptions"
+            :key="actor.alias"
+            :label="actor.label"
+            :value="actor.alias"
+          >
+            <div class="actor-option">
+              <span>{{ actor.name }}</span>
+              <small>{{ actor.alias }}</small>
             </div>
+          </el-option>
+        </el-select>
+      </div>
 
-            <el-row :gutter="18">
-              <el-col :xs="24" :lg="14">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">生成与注册 DID</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="DID">
-                      <el-input v-model="identityForm.did" placeholder="did:gov:court-a" />
+      <el-tabs v-model="activeTab" class="did-tabs">
+        <el-tab-pane label="身份管理" name="identity">
+          <div class="section-heading">
+            <h2>身份管理</h2>
+            <el-radio-group v-model="identitySection" size="small">
+              <el-radio-button label="did">DID 管理</el-radio-button>
+              <el-radio-button label="policy">策略管理</el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <div
+            v-if="identitySection === 'did'"
+            class="content-grid content-grid--wide"
+          >
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">创建 DID</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="DID 标识">
+                  <el-input
+                    v-model="identityForm.did"
+                    placeholder="例如 did:gov:court-a"
+                  />
+                </el-form-item>
+                <el-form-item label="身份名称">
+                  <el-input
+                    v-model="identityName"
+                    placeholder="例如 示例法院"
+                    @change="syncIdentityDocument"
+                  />
+                </el-form-item>
+                <el-collapse class="advanced-collapse">
+                  <el-collapse-item
+                    title="高级设置：DID Document"
+                    name="document"
+                  >
+                    <el-input
+                      v-model="identityForm.document"
+                      type="textarea"
+                      :rows="5"
+                      placeholder='{"id":"did:gov:court-a","name":"示例法院"}'
+                    />
+                  </el-collapse-item>
+                </el-collapse>
+                <div class="button-row card-actions">
+                  <el-button
+                    class="start-button"
+                    :loading="loading.generateDid"
+                    @click="generateIdentity"
+                  >
+                    生成身份材料
+                  </el-button>
+                  <el-button
+                    class="default-button"
+                    :loading="loading.registerDid"
+                    @click="registerIdentity"
+                  >
+                    注册 DID
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
+
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">查询 DID</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="目标 DID">
+                  <el-input
+                    v-model="identityQueryDid"
+                    placeholder="输入需要查询的 DID"
+                  />
+                </el-form-item>
+                <div class="button-stack card-actions">
+                  <el-button
+                    class="default-button"
+                    :loading="loading.queryDid"
+                    @click="queryIdentity"
+                  >
+                    查询身份
+                  </el-button>
+                  <el-button
+                    class="start-button"
+                    :loading="loading.queryRole"
+                    @click="queryRoles"
+                  >
+                    查询角色
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
+          </div>
+
+          <div v-else class="content-grid content-grid--wide">
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">登记访问策略</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-row :gutter="14">
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="策略 ID">
+                      <el-input v-model="policyForm.policyID" />
                     </el-form-item>
-                    <el-form-item label="DID Document">
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="颁发者 DID">
+                      <el-input v-model="policyForm.issuerDID" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="部门角色">
                       <el-input
-                        v-model="identityForm.document"
-                        type="textarea"
-                        :rows="6"
-                        placeholder='{"id":"did:gov:court-a","name":"示例主体"}'
+                        v-model="policyForm.deptRole"
+                        placeholder="court"
                       />
                     </el-form-item>
-                    <div class="button-row">
-                      <el-button class="default-button" :loading="loading.generateDid" @click="generateIdentity">
-                        1. 本地生成
-                      </el-button>
-                      <el-button class="next-button" :loading="loading.registerDid" @click="registerIdentity">
-                        2. 注册上链
-                      </el-button>
-                    </div>
-                  </el-form>
-                </el-card>
-              </el-col>
-              <el-col :xs="24" :lg="10">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">查询身份与角色</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="目标 DID">
-                      <el-input v-model="identityQueryDid" placeholder="did:gov:court-a" />
+                  </el-col>
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="授权范围">
+                      <el-input
+                        v-model="policyForm.authScope"
+                        placeholder="case"
+                      />
                     </el-form-item>
-                    <div class="button-stack">
-                      <el-button class="default-button" :loading="loading.queryDid" @click="queryIdentity">查询链上 DID</el-button>
-                      <el-button class="start-button" :loading="loading.queryRole" @click="queryRoles">查询链上角色</el-button>
-                    </div>
-                  </el-form>
-                </el-card>
-              </el-col>
-            </el-row>
-          </el-tab-pane>
-
-          <el-tab-pane label="授权策略" name="policy">
-            <div class="tab-intro">
-              <h2>授权策略</h2>
-            </div>
-
-            <el-row :gutter="18">
-              <el-col :xs="24" :lg="14">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">注册策略</span></template>
-                  <el-form label-position="top">
-                    <el-row :gutter="14">
-                      <el-col :span="12"><el-form-item label="颁发者 DID"><el-input v-model="policyForm.issuerDID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="Policy ID"><el-input v-model="policyForm.policyID" /></el-form-item></el-col>
-                      <el-col :span="8"><el-form-item label="部门角色"><el-input v-model="policyForm.deptRole" placeholder="court" /></el-form-item></el-col>
-                      <el-col :span="8"><el-form-item label="授权范围"><el-input v-model="policyForm.authScope" placeholder="case" /></el-form-item></el-col>
-                      <el-col :span="8"><el-form-item label="数据级别"><el-input v-model="policyForm.dataLevel" placeholder="internal" /></el-form-item></el-col>
-                      <el-col :span="24"><el-form-item label="动作集合"><el-input v-model="policyForm.actions" placeholder="read,write" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="生效时间（Unix 秒）"><el-input-number v-model="policyForm.validFrom" :min="0" controls-position="right" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="失效时间（Unix 秒）"><el-input-number v-model="policyForm.validUntil" :min="0" controls-position="right" /></el-form-item></el-col>
-                    </el-row>
-                    <el-button class="default-button" :loading="loading.registerPolicy" @click="registerPolicy">注册策略</el-button>
-                  </el-form>
-                </el-card>
-              </el-col>
-              <el-col :xs="24" :lg="10">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">查询与停用</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="Policy ID"><el-input v-model="policyQueryId" /></el-form-item>
-                    <div class="button-stack">
-                      <el-button class="default-button" :loading="loading.queryPolicy" @click="queryPolicy">查询策略</el-button>
-                      <el-button type="danger" plain :loading="loading.deactivatePolicy" @click="deactivatePolicy">停用策略</el-button>
-                    </div>
-                  </el-form>
-                </el-card>
-              </el-col>
-            </el-row>
-          </el-tab-pane>
-
-          <el-tab-pane label="可验证凭证 VC" name="credential">
-            <div class="tab-intro">
-              <h2>凭证签发与验证</h2>
-            </div>
-
-            <el-row :gutter="18">
-              <el-col :xs="24" :lg="14">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">签发 VC</span></template>
-                  <el-form label-position="top">
-                    <el-row :gutter="14">
-                      <el-col :span="12"><el-form-item label="VC ID"><el-input v-model="credentialForm.vcID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="Policy ID"><el-input v-model="credentialForm.policyID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="颁发者 DID"><el-input v-model="credentialForm.issuerDID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="持有者 DID"><el-input v-model="credentialForm.holderDID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="策略条目索引"><el-input-number v-model="credentialForm.entryIndex" :min="0" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="失效时间（Unix 秒）"><el-input-number v-model="credentialForm.expiresAt" :min="0" controls-position="right" /></el-form-item></el-col>
-                      <el-col :span="24"><el-form-item><el-checkbox v-model="credentialForm.anonymousEligible">允许用于匿名凭证展示</el-checkbox></el-form-item></el-col>
-                    </el-row>
-                    <el-button class="default-button" :loading="loading.issueCredential" @click="issueCredential">签发 VC</el-button>
-                  </el-form>
-                </el-card>
-              </el-col>
-              <el-col :xs="24" :lg="10">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">查询与验证</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="VC ID"><el-input v-model="credentialQueryId" /></el-form-item>
-                    <div class="button-stack">
-                      <el-button class="default-button" :loading="loading.queryCredential" @click="queryCredential">查询 VC</el-button>
-                      <el-button class="next-button" :loading="loading.verifyCredential" @click="verifyCredential">验证 VC</el-button>
-                    </div>
-                  </el-form>
-                </el-card>
-              </el-col>
-            </el-row>
-          </el-tab-pane>
-
-          <el-tab-pane label="凭证展示 VP" name="presentation">
-            <div class="tab-intro">
-              <h2>凭证展示与验证</h2>
-            </div>
-
-            <el-row :gutter="18">
-              <el-col :xs="24" :lg="12">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">1. 获取 nonce</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="验证方 DID"><el-input v-model="nonceForm.verifierDID" /></el-form-item>
-                    <el-form-item label="用途"><el-input v-model="nonceForm.purpose" placeholder="case-read" /></el-form-item>
-                    <el-form-item label="有效期（秒）"><el-input-number v-model="nonceForm.ttlSeconds" :min="30" :max="3600" /></el-form-item>
-                    <el-button class="default-button" :loading="loading.issueNonce" @click="issueNonce">签发 nonce</el-button>
-                  </el-form>
-                </el-card>
-              </el-col>
-              <el-col :xs="24" :lg="12">
-                <el-card shadow="never" class="operation-card">
-                  <template #header><span class="card-title">2. 生成 VP</span></template>
-                  <el-form label-position="top">
-                    <el-row :gutter="12">
-                      <el-col :span="12"><el-form-item label="持有者 DID"><el-input v-model="presentationForm.holderDID" /></el-form-item></el-col>
-                      <el-col :span="12"><el-form-item label="验证方 DID"><el-input v-model="presentationForm.verifierDID" /></el-form-item></el-col>
-                    </el-row>
-                    <el-form-item label="nonce"><el-input v-model="presentationForm.nonce" /></el-form-item>
-                    <el-form-item label="用途"><el-input v-model="presentationForm.purpose" /></el-form-item>
-                    <el-form-item label="VC IDs"><el-input v-model="presentationForm.vcIDs" placeholder="vc-001,vc-002" /></el-form-item>
-                    <el-button class="next-button" :loading="loading.generatePresentation" @click="generatePresentation">生成 VP</el-button>
-                  </el-form>
-                </el-card>
-              </el-col>
-              <el-col :span="24">
-                <el-card shadow="never" class="operation-card verify-card">
-                  <template #header><span class="card-title">3. 验证 VP</span></template>
-                  <el-form label-position="top">
-                    <el-form-item label="VP JSON">
-                      <el-input v-model="verifyPresentationJson" type="textarea" :rows="8" placeholder="粘贴或使用上一步生成的 VP" />
+                  </el-col>
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="数据级别">
+                      <el-input
+                        v-model="policyForm.dataLevel"
+                        placeholder="internal"
+                      />
                     </el-form-item>
-                    <el-row :gutter="12">
-                      <el-col :span="6"><el-form-item label="部门角色"><el-input v-model="accessForm.deptRole" /></el-form-item></el-col>
-                      <el-col :span="6"><el-form-item label="授权范围"><el-input v-model="accessForm.authScope" /></el-form-item></el-col>
-                      <el-col :span="6"><el-form-item label="数据级别"><el-input v-model="accessForm.dataLevel" /></el-form-item></el-col>
-                      <el-col :span="6"><el-form-item label="动作"><el-input v-model="accessForm.action" /></el-form-item></el-col>
+                  </el-col>
+                  <el-col :span="24">
+                    <el-form-item label="允许动作">
+                      <el-input
+                        v-model="policyForm.actions"
+                        placeholder="read,write"
+                      />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <el-collapse class="advanced-collapse">
+                  <el-collapse-item title="高级设置：策略有效期" name="period">
+                    <el-row :gutter="14">
+                      <el-col :xs="24" :sm="12">
+                        <el-form-item label="生效时间（Unix 秒）">
+                          <el-input-number
+                            v-model="policyForm.validFrom"
+                            :min="0"
+                            controls-position="right"
+                          />
+                        </el-form-item>
+                      </el-col>
+                      <el-col :xs="24" :sm="12">
+                        <el-form-item label="失效时间（Unix 秒）">
+                          <el-input-number
+                            v-model="policyForm.validUntil"
+                            :min="0"
+                            controls-position="right"
+                          />
+                        </el-form-item>
+                      </el-col>
                     </el-row>
-                    <el-button class="default-button" :loading="loading.verifyPresentation" @click="verifyPresentation">验证 VP</el-button>
-                  </el-form>
-                </el-card>
-              </el-col>
-            </el-row>
-          </el-tab-pane>
-        </el-tabs>
-      </section>
+                  </el-collapse-item>
+                </el-collapse>
+                <div class="card-actions">
+                  <el-button
+                    class="default-button"
+                    :loading="loading.registerPolicy"
+                    @click="registerPolicy"
+                  >
+                    登记策略
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
 
-      <aside class="result-panel">
-        <div class="result-heading">
-          <h3>操作结果</h3>
-          <el-tag v-if="lastResult" :type="lastResult.code === 0 ? 'success' : 'danger'" effect="dark">
-            {{ lastResult.code === 0 ? '成功' : `错误 ${lastResult.code}` }}
-          </el-tag>
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">查询与停用</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="策略 ID">
+                  <el-input v-model="policyQueryId" />
+                </el-form-item>
+                <div class="button-stack card-actions">
+                  <el-button
+                    class="default-button"
+                    :loading="loading.queryPolicy"
+                    @click="queryPolicy"
+                  >
+                    查询策略
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    plain
+                    :loading="loading.deactivatePolicy"
+                    @click="deactivatePolicy"
+                  >
+                    停用策略
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="可验证凭证管理" name="credential">
+          <div class="section-heading">
+            <h2>可验证凭证管理</h2>
+          </div>
+
+          <div class="content-grid content-grid--wide">
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">签发可验证凭证</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-row :gutter="14">
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="VC ID">
+                      <el-input v-model="credentialForm.vcID" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="策略 ID">
+                      <el-input v-model="credentialForm.policyID" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="颁发者 DID">
+                      <el-input v-model="credentialForm.issuerDID" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="持有者 DID">
+                      <el-input v-model="credentialForm.holderDID" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="失效时间（Unix 秒）">
+                      <el-input-number
+                        v-model="credentialForm.expiresAt"
+                        :min="0"
+                        controls-position="right"
+                      />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="策略条目索引">
+                      <el-input-number
+                        v-model="credentialForm.entryIndex"
+                        :min="0"
+                        controls-position="right"
+                      />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="24">
+                    <el-form-item class="checkbox-item">
+                      <el-checkbox v-model="credentialForm.anonymousEligible">
+                        允许该凭证用于匿名认证
+                      </el-checkbox>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <div class="card-actions">
+                  <el-button
+                    class="default-button"
+                    :loading="loading.issueCredential"
+                    @click="issueCredential"
+                  >
+                    签发 VC
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
+
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">查询与验证凭证</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="VC ID">
+                  <el-input
+                    v-model="credentialQueryId"
+                    placeholder="输入需要查询的 VC ID"
+                  />
+                </el-form-item>
+                <div class="credential-summary">
+                  <div>
+                    <span>签发状态</span>
+                    <strong>等待查询</strong>
+                  </div>
+                  <div>
+                    <span>凭证有效性</span>
+                    <strong>等待验证</strong>
+                  </div>
+                  <div>
+                    <span>撤销状态</span>
+                    <strong>等待查询</strong>
+                  </div>
+                </div>
+                <div class="button-stack card-actions">
+                  <el-button
+                    class="start-button"
+                    :loading="loading.queryCredential"
+                    @click="queryCredential"
+                  >
+                    查询 VC
+                  </el-button>
+                  <el-button
+                    class="default-button"
+                    :loading="loading.verifyCredential"
+                    @click="verifyCredential"
+                  >
+                    验证 VC
+                  </el-button>
+                </div>
+                <el-collapse class="advanced-collapse eligibility-collapse">
+                  <el-collapse-item
+                    title="匿名资格设置"
+                    name="anonymous-membership"
+                  >
+                    <el-form-item label="匿名资格群组">
+                      <el-input
+                        v-model="anonymousMembership.groupID"
+                        placeholder="输入群组 ID"
+                      />
+                    </el-form-item>
+                    <el-button
+                      class="start-button full-button"
+                      @click="showPending('加入匿名资格群组')"
+                    >
+                      将当前 VC 加入群组
+                    </el-button>
+                  </el-collapse-item>
+                </el-collapse>
+              </el-form>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="身份与权限联合验证" name="joint">
+          <div class="section-heading">
+            <h2>身份与权限联合验证</h2>
+          </div>
+
+          <el-steps
+            :active="jointStep"
+            finish-status="success"
+            align-center
+            class="flow-steps"
+          >
+            <el-step title="发起联合验证" />
+            <el-step title="生成凭证展示" />
+            <el-step title="验证身份与权限" />
+          </el-steps>
+
+          <div class="content-grid content-grid--three">
+            <el-card
+              shadow="never"
+              class="operation-card flow-card"
+              :class="{ 'flow-card--active': jointStep === 0 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">发起联合验证</span>
+                  </div>
+                  <span class="number-badge">1</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="验证方 DID">
+                  <el-input v-model="nonceForm.verifierDID" />
+                </el-form-item>
+                <el-form-item label="认证用途">
+                  <el-input
+                    v-model="nonceForm.purpose"
+                    placeholder="case-read"
+                  />
+                </el-form-item>
+                <el-form-item label="有效期（秒）">
+                  <el-input-number
+                    v-model="nonceForm.ttlSeconds"
+                    :min="30"
+                    :max="3600"
+                    controls-position="right"
+                  />
+                </el-form-item>
+                <el-button
+                  class="default-button full-button"
+                  :loading="loading.issueNonce"
+                  @click="issueNonce"
+                >
+                  发起联合验证
+                </el-button>
+              </el-form>
+            </el-card>
+
+            <el-card
+              shadow="never"
+              class="operation-card flow-card"
+              :class="{ 'flow-card--active': jointStep === 1 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">生成凭证展示</span>
+                  </div>
+                  <span class="number-badge">2</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="持有者 DID">
+                  <el-input v-model="presentationForm.holderDID" />
+                </el-form-item>
+                <el-form-item label="需要出示的 VC">
+                  <el-input
+                    v-model="presentationForm.vcIDs"
+                    placeholder="vc-001,vc-002"
+                  />
+                </el-form-item>
+                <div
+                  class="context-chip"
+                  :class="{ 'context-chip--ready': presentationForm.nonce }"
+                >
+                  {{
+                    presentationForm.nonce
+                      ? '认证信息已自动传入'
+                      : '请先发起联合验证'
+                  }}
+                </div>
+                <el-button
+                  class="default-button full-button"
+                  :loading="loading.generatePresentation"
+                  :disabled="!presentationForm.nonce"
+                  @click="generatePresentation"
+                >
+                  生成凭证展示
+                </el-button>
+              </el-form>
+            </el-card>
+
+            <el-card
+              shadow="never"
+              class="operation-card flow-card"
+              :class="{ 'flow-card--active': jointStep === 2 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">提交联合验证</span>
+                  </div>
+                  <span class="number-badge">3</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-row :gutter="10">
+                  <el-col :span="12">
+                    <el-form-item label="部门角色">
+                      <el-input v-model="accessForm.deptRole" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="授权范围">
+                      <el-input v-model="accessForm.authScope" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="数据级别">
+                      <el-input v-model="accessForm.dataLevel" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="访问动作">
+                      <el-input v-model="accessForm.action" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <div
+                  class="context-chip"
+                  :class="{ 'context-chip--ready': verifyPresentationJson }"
+                >
+                  {{
+                    verifyPresentationJson
+                      ? 'VP 已自动准备'
+                      : '请先生成凭证展示'
+                  }}
+                </div>
+                <el-button
+                  class="default-button full-button"
+                  :loading="loading.verifyPresentation"
+                  :disabled="!verifyPresentationJson"
+                  @click="verifyPresentation"
+                >
+                  验证身份与权限
+                </el-button>
+              </el-form>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="匿名认证" name="anonymous">
+          <div class="section-heading">
+            <h2>匿名认证</h2>
+          </div>
+
+          <div class="anonymous-anchor">
+            <span>匿名资格群组</span>
+            <el-input
+              v-model="privacyPresentationForm.groupID"
+              placeholder="输入群组 ID"
+            />
+          </div>
+
+          <el-steps
+            :active="anonymousStep"
+            finish-status="success"
+            align-center
+            class="flow-steps"
+          >
+            <el-step title="发起匿名认证" />
+            <el-step title="生成匿名凭证展示" />
+            <el-step title="验证匿名资格" />
+          </el-steps>
+
+          <div class="content-grid content-grid--three anonymous-flow">
+            <el-card
+              shadow="never"
+              class="operation-card flow-card"
+              :class="{ 'flow-card--active': anonymousStep === 0 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">发起匿名认证</span>
+                  </div>
+                  <span class="number-badge">1</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="验证方 DID">
+                  <el-input v-model="anonymousNonceForm.verifierDID" />
+                </el-form-item>
+                <el-form-item label="认证用途">
+                  <el-input
+                    v-model="anonymousNonceForm.purpose"
+                    placeholder="case-read"
+                  />
+                </el-form-item>
+                <el-form-item label="有效期（秒）">
+                  <el-input-number
+                    v-model="anonymousNonceForm.ttlSeconds"
+                    :min="30"
+                    :max="3600"
+                    controls-position="right"
+                  />
+                </el-form-item>
+                <el-button
+                  class="default-button full-button"
+                  :loading="loading.issueAnonymousNonce"
+                  @click="issueAnonymousNonce"
+                >
+                  发起匿名认证
+                </el-button>
+              </el-form>
+            </el-card>
+
+            <el-card
+              shadow="never"
+              class="operation-card flow-card privacy-vp-card"
+              :class="{ 'flow-card--active': anonymousStep === 1 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">生成匿名凭证展示</span>
+                  </div>
+                  <span class="number-badge">2</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="持有者 DID">
+                  <el-input v-model="privacyPresentationForm.holderDID" />
+                </el-form-item>
+                <el-form-item label="匿名 VP ID">
+                  <el-input
+                    v-model="privacyPresentationForm.vpID"
+                    placeholder="可留空，由系统生成"
+                  />
+                </el-form-item>
+                <div
+                  class="context-chip"
+                  :class="{
+                    'context-chip--ready': privacyPresentationForm.nonce,
+                  }"
+                >
+                  {{
+                    privacyPresentationForm.nonce
+                      ? '认证信息已自动传入'
+                      : '请先发起匿名认证'
+                  }}
+                </div>
+                <el-button
+                  class="default-button full-button"
+                  :disabled="!privacyPresentationForm.nonce"
+                  @click="previewPrivacyVpGeneration"
+                >
+                  生成匿名凭证展示
+                </el-button>
+              </el-form>
+            </el-card>
+
+            <el-card
+              shadow="never"
+              class="operation-card flow-card privacy-verify-card"
+              :class="{ 'flow-card--active': anonymousStep === 2 }"
+            >
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">验证匿名资格</span>
+                  </div>
+                  <span class="number-badge">3</span>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-row :gutter="10">
+                  <el-col :span="12">
+                    <el-form-item label="部门角色">
+                      <el-input v-model="anonymousAccessForm.deptRole" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="授权范围">
+                      <el-input v-model="anonymousAccessForm.authScope" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="数据级别">
+                      <el-input v-model="anonymousAccessForm.dataLevel" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item label="访问动作">
+                      <el-input v-model="anonymousAccessForm.action" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+                <div
+                  class="context-chip"
+                  :class="{ 'context-chip--ready': privacyPresentationJson }"
+                >
+                  {{
+                    privacyPresentationJson
+                      ? '匿名凭证展示已自动准备'
+                      : '请先生成匿名凭证展示'
+                  }}
+                </div>
+                <el-button
+                  class="default-button full-button"
+                  :disabled="!privacyPresentationJson"
+                  @click="previewPrivacyVpVerification"
+                >
+                  验证匿名资格
+                </el-button>
+              </el-form>
+            </el-card>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="凭证撤销" name="revocation">
+          <div class="section-heading">
+            <h2>凭证撤销</h2>
+          </div>
+
+          <div class="content-grid content-grid--wide">
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">创建撤销申请</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="待撤销 VC">
+                  <el-input
+                    v-model="revocationForm.vcID"
+                    placeholder="输入 VC ID"
+                  />
+                </el-form-item>
+                <el-form-item label="撤销原因">
+                  <el-select
+                    v-model="revocationForm.eventType"
+                    class="full-select"
+                  >
+                    <el-option
+                      label="凭证信息失效"
+                      value="credential_invalid"
+                    />
+                    <el-option
+                      label="持有者权限变更"
+                      value="permission_changed"
+                    />
+                    <el-option label="签发错误" value="issuance_error" />
+                    <el-option label="其他原因" value="other" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="补充说明">
+                  <el-input
+                    v-model="revocationForm.reason"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="简要说明撤销原因"
+                  />
+                </el-form-item>
+                <el-button
+                  class="default-button"
+                  @click="showPending('凭证撤销申请')"
+                >
+                  提交撤销申请
+                </el-button>
+              </el-form>
+            </el-card>
+
+            <el-card shadow="never" class="operation-card">
+              <template #header>
+                <div class="card-header">
+                  <div>
+                    <span class="card-title">批准与执行</span>
+                  </div>
+                </div>
+              </template>
+              <el-form label-position="top">
+                <el-form-item label="撤销申请 ID">
+                  <el-input
+                    v-model="revocationForm.draftID"
+                    placeholder="申请创建后自动填入"
+                  />
+                </el-form-item>
+                <div class="approval-box">
+                  <div class="approval-title">
+                    <span>委员会批准进度</span>
+                    <strong>0 / 2</strong>
+                  </div>
+                  <el-progress
+                    :percentage="0"
+                    :stroke-width="8"
+                    :show-text="false"
+                  />
+                </div>
+                <div class="button-stack card-actions">
+                  <el-button
+                    class="start-button"
+                    @click="showPending('撤销批准')"
+                  >
+                    批准申请
+                  </el-button>
+                  <el-button
+                    class="default-button"
+                    @click="showPending('执行撤销')"
+                  >
+                    执行撤销
+                  </el-button>
+                  <el-button
+                    class="start-button"
+                    @click="showPending('撤销状态查询')"
+                  >
+                    查询结果
+                  </el-button>
+                </div>
+              </el-form>
+            </el-card>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </section>
+
+    <section
+      v-if="lastResult"
+      class="result-card"
+      :class="{ 'result-card--error': lastResult.code !== 0 }"
+    >
+      <div class="result-summary">
+        <div class="result-icon">{{ lastResult.code === 0 ? '✓' : '!' }}</div>
+        <div>
+          <strong>
+            {{ lastAction }}{{ lastResult.code === 0 ? '成功' : '失败' }}
+          </strong>
+          <p>
+            {{
+              lastResult.message ||
+              (lastResult.code === 0 ? '操作已完成' : '请检查请求信息')
+            }}
+          </p>
         </div>
-        <div v-if="lastResult" class="result-meta">
-          <strong>{{ lastAction }}</strong>
-          <code>{{ lastResult.requestId || '—' }}</code>
-        </div>
-        <pre v-if="lastResult" class="json-viewer">{{ prettyResult }}</pre>
-        <div v-else class="empty-result">
-          暂无操作结果
-        </div>
-      </aside>
-    </div>
+        <span v-if="lastResult.requestId" class="request-id">
+          {{ lastResult.requestId }}
+        </span>
+      </div>
+      <el-collapse class="result-details">
+        <el-collapse-item title="查看技术详情" name="json">
+          <pre>{{ prettyResult }}</pre>
+        </el-collapse-item>
+      </el-collapse>
+    </section>
   </div>
 </template>
 
@@ -239,10 +871,9 @@ import {
   credentialQuery,
   credentialVerify,
   didGenerate,
-  didHealth,
   didQuery,
-  didReady,
   didRegister,
+  didSession,
   policyDeactivate,
   policyQuery,
   policyRegister,
@@ -254,14 +885,21 @@ import {
 
 const now = Math.floor(Date.now() / 1000)
 const activeTab = ref('identity')
+const identitySection = ref('did')
 const actorAlias = ref(localStorage.getItem('davex-did-actor') || 'bootstrap')
-const statusLoading = ref(false)
-const serviceState = reactive({ http: 'checking', chain: 'checking' })
-const statusMessage = ref('正在检查 DID 服务状态。')
+const actorOptions = ref([
+  {
+    alias: 'bootstrap',
+    name: '系统初始化方',
+    label: '系统初始化方（bootstrap）',
+  },
+  { alias: 'governance', name: '治理方', label: '治理方（governance）' },
+])
 const lastAction = ref('')
 const lastResult = ref(null)
 const loading = reactive({})
 
+const identityName = ref('示例法院')
 const identityForm = reactive({
   did: 'did:gov:court-a',
   document: '{\n  "id": "did:gov:court-a",\n  "name": "示例法院"\n}',
@@ -290,8 +928,13 @@ const credentialForm = reactive({
   anonymousEligible: true,
 })
 const credentialQueryId = ref('vc-case-read-001')
+const anonymousMembership = reactive({ groupID: 'group-case-read' })
 
-const nonceForm = reactive({ verifierDID: 'did:gov:verifier-a', purpose: 'case-read', ttlSeconds: 120 })
+const nonceForm = reactive({
+  verifierDID: 'did:gov:verifier-a',
+  purpose: 'case-read',
+  ttlSeconds: 120,
+})
 const presentationForm = reactive({
   holderDID: 'did:gov:holder-a',
   verifierDID: 'did:gov:verifier-a',
@@ -300,18 +943,107 @@ const presentationForm = reactive({
   vcIDs: 'vc-case-read-001',
 })
 const verifyPresentationJson = ref('')
-const accessForm = reactive({ deptRole: 'court', authScope: 'case', dataLevel: 'internal', action: 'read' })
+const accessForm = reactive({
+  deptRole: 'court',
+  authScope: 'case',
+  dataLevel: 'internal',
+  action: 'read',
+})
+
+const anonymousNonceForm = reactive({
+  verifierDID: 'did:gov:verifier-a',
+  purpose: 'case-read',
+  ttlSeconds: 120,
+})
+const privacyPresentationForm = reactive({
+  vpID: 'pvp-case-read-001',
+  groupID: 'group-case-read',
+  holderDID: 'did:gov:holder-a',
+  verifierDID: 'did:gov:verifier-a',
+  nonce: '',
+  purpose: 'case-read',
+})
+const privacyPresentationJson = ref('')
+const anonymousAccessForm = reactive({
+  deptRole: 'court',
+  authScope: 'case',
+  dataLevel: 'internal',
+  action: 'read',
+})
+
+const revocationForm = reactive({
+  vcID: 'vc-case-read-001',
+  eventType: 'credential_invalid',
+  reason: '',
+  draftID: '',
+})
 
 const prettyResult = computed(() => JSON.stringify(lastResult.value, null, 2))
+const jointStep = computed(() => {
+  if (verifyPresentationJson.value) return 2
+  if (presentationForm.nonce) return 1
+  return 0
+})
+const anonymousStep = computed(() => {
+  if (privacyPresentationJson.value) return 2
+  if (privacyPresentationForm.nonce) return 1
+  return 0
+})
 
-const statusText = (state) => ({ online: '可用', offline: '不可达', disabled: '未启用', checking: '检查中' })[state] || state
+const actorDisplayName = (actor) => {
+  const knownNames = {
+    bootstrap: '系统初始化方',
+    governance: '治理方',
+    issuer: '凭证签发方',
+    holder: '凭证持有者',
+    verifier: '验证方',
+  }
+  return knownNames[actor.alias] || actor.did || '操作身份'
+}
+
+const loadActorOptions = async () => {
+  try {
+    const response = await didSession(actorAlias.value)
+    const actors = response.data?.data?.actors
+    if (!Array.isArray(actors) || actors.length === 0) return
+    actorOptions.value = actors.map((actor) => {
+      const name = actorDisplayName(actor)
+      return { ...actor, name, label: `${name}（${actor.alias}）` }
+    })
+    if (!actorOptions.value.some((actor) => actor.alias === actorAlias.value)) {
+      actorAlias.value = actorOptions.value[0].alias
+      saveActor()
+    }
+  } catch (error) {
+    if (!actorOptions.value.some((actor) => actor.alias === actorAlias.value)) {
+      actorOptions.value.push({
+        alias: actorAlias.value,
+        name: '当前身份',
+        label: `当前身份（${actorAlias.value}）`,
+      })
+    }
+  }
+}
 
 const saveActor = () => {
-  localStorage.setItem('davex-did-actor', actorAlias.value.trim())
+  localStorage.setItem('davex-did-actor', actorAlias.value)
+}
+
+const syncIdentityDocument = () => {
+  identityForm.document = JSON.stringify(
+    { id: identityForm.did, name: identityName.value },
+    null,
+    2,
+  )
 }
 
 const required = (values, message) => {
-  if (values.some((value) => value === null || value === undefined || String(value).trim() === '')) {
+  if (
+    values.some(
+      (value) =>
+        value === null || value === undefined || String(value).trim() === '',
+    )
+  ) {
     ElMessage.warning(message)
     return false
   }
@@ -346,106 +1078,173 @@ const execute = async (key, title, requestTask) => {
   }
 }
 
-const refreshStatus = async (notify = false) => {
-  statusLoading.value = true
-  serviceState.http = 'checking'
-  serviceState.chain = 'checking'
-  try {
-    const health = await didHealth()
-    if (health.data?.code === 0) {
-      serviceState.http = 'online'
-    } else if (health.data?.code === 41001) {
-      serviceState.http = 'disabled'
-      serviceState.chain = 'disabled'
-      statusMessage.value = 'DID 功能未启用'
-      return
-    } else {
-      serviceState.http = 'offline'
-    }
+const showPending = (feature) => {
+  ElMessage.info(`${feature}已完成页面排版，接口将在确认样式后接入`)
+}
 
-    const ready = await didReady(actorAlias.value)
-    serviceState.chain = ready.data?.code === 0 ? 'online' : 'offline'
-    statusMessage.value = serviceState.chain === 'online' ? 'DID 服务已就绪' : 'ChainMaker 未就绪'
-    if (notify) ElMessage[serviceState.chain === 'online' ? 'success' : 'warning'](statusMessage.value)
-  } catch (error) {
-    serviceState.http = 'offline'
-    serviceState.chain = 'offline'
-    statusMessage.value = 'DAVEX Java 服务不可达'
-    if (notify) ElMessage.warning(statusMessage.value)
-  } finally {
-    statusLoading.value = false
+const issueAnonymousNonce = async () => {
+  if (
+    !required(
+      [anonymousNonceForm.verifierDID, anonymousNonceForm.purpose],
+      '请填写验证方 DID 和认证用途',
+    )
+  )
+    return
+  const result = await execute('issueAnonymousNonce', '发起匿名认证', () =>
+    presentationNonce({ ...anonymousNonceForm }, actorAlias.value),
+  )
+  if (result?.code === 0) {
+    privacyPresentationForm.nonce = result.data?.nonce || ''
+    privacyPresentationForm.verifierDID = anonymousNonceForm.verifierDID
+    privacyPresentationForm.purpose = anonymousNonceForm.purpose
   }
 }
 
+const previewPrivacyVpGeneration = () => {
+  if (
+    !required(
+      [
+        privacyPresentationForm.groupID,
+        privacyPresentationForm.holderDID,
+        privacyPresentationForm.verifierDID,
+        privacyPresentationForm.nonce,
+        privacyPresentationForm.purpose,
+      ],
+      '请完整填写匿名凭证展示信息',
+    )
+  )
+    return
+  showPending('匿名凭证展示生成')
+}
+
+const previewPrivacyVpVerification = () => {
+  if (!required([privacyPresentationJson.value], '请先生成匿名凭证展示')) return
+  showPending('匿名资格验证')
+}
+
 const generateIdentity = async () => {
-  if (!required([identityForm.did, identityForm.document], '请填写 DID 和 DID Document')) return
-  const result = await execute('generateDid', '生成 DID', () => didGenerate({ ...identityForm }, actorAlias.value))
-  if (result?.code === 0) identityQueryDid.value = result.data?.did || identityForm.did
+  if (
+    !required(
+      [identityForm.did, identityForm.document],
+      '请填写 DID 和 DID Document',
+    )
+  )
+    return
+  const result = await execute('generateDid', '生成 DID', () =>
+    didGenerate({ ...identityForm }, actorAlias.value),
+  )
+  if (result?.code === 0)
+    identityQueryDid.value = result.data?.did || identityForm.did
 }
 
 const registerIdentity = async () => {
   if (!required([identityForm.did], '请先填写或生成 DID')) return
-  await execute('registerDid', '注册 DID', () => didRegister({ did: identityForm.did.trim() }, actorAlias.value))
+  await execute('registerDid', '注册 DID', () =>
+    didRegister({ did: identityForm.did.trim() }, actorAlias.value),
+  )
 }
 
 const queryIdentity = async () => {
   if (!required([identityQueryDid.value], '请输入要查询的 DID')) return
-  await execute('queryDid', '查询 DID', () => didQuery(identityQueryDid.value.trim(), actorAlias.value))
+  await execute('queryDid', '查询 DID', () =>
+    didQuery(identityQueryDid.value.trim(), actorAlias.value),
+  )
 }
 
 const queryRoles = async () => {
   if (!required([identityQueryDid.value], '请输入要查询的 DID')) return
-  await execute('queryRole', '查询角色', () => roleQuery(identityQueryDid.value.trim(), actorAlias.value))
+  await execute('queryRole', '查询角色', () =>
+    roleQuery(identityQueryDid.value.trim(), actorAlias.value),
+  )
 }
 
 const registerPolicy = async () => {
-  if (!required([policyForm.issuerDID, policyForm.policyID, policyForm.deptRole, policyForm.authScope, policyForm.dataLevel, policyForm.actions], '请完整填写策略字段')) return
-  const actions = policyForm.actions.split(',').map((item) => item.trim()).filter(Boolean)
+  const requiredValues = [
+    policyForm.issuerDID,
+    policyForm.policyID,
+    policyForm.deptRole,
+    policyForm.authScope,
+    policyForm.dataLevel,
+    policyForm.actions,
+  ]
+  if (!required(requiredValues, '请完整填写策略字段')) return
+  const actions = policyForm.actions
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
   const body = {
     issuerDID: policyForm.issuerDID.trim(),
-    permissions: [{
-      policyID: policyForm.policyID.trim(),
-      deptRole: policyForm.deptRole.trim(),
-      authScope: policyForm.authScope.trim(),
-      dataLevel: policyForm.dataLevel.trim(),
-      actionSet: actions,
-      validFrom: policyForm.validFrom,
-      validUntil: policyForm.validUntil,
-    }],
+    permissions: [
+      {
+        policyID: policyForm.policyID.trim(),
+        deptRole: policyForm.deptRole.trim(),
+        authScope: policyForm.authScope.trim(),
+        dataLevel: policyForm.dataLevel.trim(),
+        actionSet: actions,
+        validFrom: policyForm.validFrom,
+        validUntil: policyForm.validUntil,
+      },
+    ],
   }
-  const result = await execute('registerPolicy', '注册策略', () => policyRegister(body, actorAlias.value))
+  const result = await execute('registerPolicy', '登记策略', () =>
+    policyRegister(body, actorAlias.value),
+  )
   if (result?.code === 0) policyQueryId.value = policyForm.policyID
 }
 
 const queryPolicy = async () => {
-  if (!required([policyQueryId.value], '请输入 Policy ID')) return
-  await execute('queryPolicy', '查询策略', () => policyQuery(policyQueryId.value.trim(), actorAlias.value))
+  if (!required([policyQueryId.value], '请输入策略 ID')) return
+  await execute('queryPolicy', '查询策略', () =>
+    policyQuery(policyQueryId.value.trim(), actorAlias.value),
+  )
 }
 
 const deactivatePolicy = async () => {
-  if (!required([policyQueryId.value], '请输入 Policy ID')) return
-  await execute('deactivatePolicy', '停用策略', () => policyDeactivate(policyQueryId.value.trim(), actorAlias.value))
+  if (!required([policyQueryId.value], '请输入策略 ID')) return
+  await execute('deactivatePolicy', '停用策略', () =>
+    policyDeactivate(policyQueryId.value.trim(), actorAlias.value),
+  )
 }
 
 const issueCredential = async () => {
-  if (!required([credentialForm.vcID, credentialForm.holderDID, credentialForm.issuerDID, credentialForm.policyID], '请完整填写凭证字段')) return
-  const result = await execute('issueCredential', '签发 VC', () => credentialIssue({ ...credentialForm }, actorAlias.value))
+  const requiredValues = [
+    credentialForm.vcID,
+    credentialForm.holderDID,
+    credentialForm.issuerDID,
+    credentialForm.policyID,
+  ]
+  if (!required(requiredValues, '请完整填写凭证字段')) return
+  const result = await execute('issueCredential', '签发 VC', () =>
+    credentialIssue({ ...credentialForm }, actorAlias.value),
+  )
   if (result?.code === 0) credentialQueryId.value = credentialForm.vcID
 }
 
 const queryCredential = async () => {
   if (!required([credentialQueryId.value], '请输入 VC ID')) return
-  await execute('queryCredential', '查询 VC', () => credentialQuery(credentialQueryId.value.trim(), actorAlias.value))
+  await execute('queryCredential', '查询 VC', () =>
+    credentialQuery(credentialQueryId.value.trim(), actorAlias.value),
+  )
 }
 
 const verifyCredential = async () => {
   if (!required([credentialQueryId.value], '请输入 VC ID')) return
-  await execute('verifyCredential', '验证 VC', () => credentialVerify(credentialQueryId.value.trim(), actorAlias.value))
+  await execute('verifyCredential', '验证 VC', () =>
+    credentialVerify(credentialQueryId.value.trim(), actorAlias.value),
+  )
 }
 
 const issueNonce = async () => {
-  if (!required([nonceForm.verifierDID, nonceForm.purpose], '请填写验证方 DID 和用途')) return
-  const result = await execute('issueNonce', '签发 nonce', () => presentationNonce({ ...nonceForm }, actorAlias.value))
+  if (
+    !required(
+      [nonceForm.verifierDID, nonceForm.purpose],
+      '请填写验证方 DID 和认证用途',
+    )
+  )
+    return
+  const result = await execute('issueNonce', '发起联合验证', () =>
+    presentationNonce({ ...nonceForm }, actorAlias.value),
+  )
   if (result?.code === 0) {
     presentationForm.nonce = result.data?.nonce || ''
     presentationForm.verifierDID = nonceForm.verifierDID
@@ -454,20 +1253,37 @@ const issueNonce = async () => {
 }
 
 const generatePresentation = async () => {
-  if (!required([presentationForm.holderDID, presentationForm.verifierDID, presentationForm.nonce, presentationForm.purpose, presentationForm.vcIDs], '请完整填写 VP 字段')) return
+  const values = [
+    presentationForm.holderDID,
+    presentationForm.verifierDID,
+    presentationForm.nonce,
+    presentationForm.purpose,
+    presentationForm.vcIDs,
+  ]
+  if (!required(values, '请完整填写凭证展示信息')) return
   const body = {
     holderDID: presentationForm.holderDID.trim(),
     verifierDID: presentationForm.verifierDID.trim(),
     nonce: presentationForm.nonce.trim(),
     purpose: presentationForm.purpose.trim(),
-    vcIDs: presentationForm.vcIDs.split(',').map((item) => item.trim()).filter(Boolean),
+    vcIDs: presentationForm.vcIDs
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
   }
-  const result = await execute('generatePresentation', '生成 VP', () => presentationGenerate(body, actorAlias.value))
-  if (result?.code === 0) verifyPresentationJson.value = JSON.stringify(result.data?.vp || result.data, null, 2)
+  const result = await execute('generatePresentation', '生成凭证展示', () =>
+    presentationGenerate(body, actorAlias.value),
+  )
+  if (result?.code === 0)
+    verifyPresentationJson.value = JSON.stringify(
+      result.data?.vp || result.data,
+      null,
+      2,
+    )
 }
 
 const verifyPresentation = async () => {
-  if (!required([verifyPresentationJson.value], '请粘贴或生成 VP JSON')) return
+  if (!required([verifyPresentationJson.value], '请先生成凭证展示')) return
   let vp
   try {
     vp = JSON.parse(verifyPresentationJson.value)
@@ -485,151 +1301,345 @@ const verifyPresentation = async () => {
       atTime: Math.floor(Date.now() / 1000),
     },
   }
-  await execute('verifyPresentation', '验证 VP', () => presentationVerify(body, actorAlias.value))
+  await execute('verifyPresentation', '身份与权限联合验证', () =>
+    presentationVerify(body, actorAlias.value),
+  )
 }
 
-onMounted(() => refreshStatus(false))
+onMounted(loadActorOptions)
 </script>
 
 <style scoped lang="scss">
 .did-workspace {
   --did-blue: #165ac6;
+  --did-light-blue: #eef6ff;
   --did-border: #dce6f3;
   min-width: 0;
   color: #2d405e;
 }
 
-.hero-panel {
-  overflow: hidden;
+.workspace-panel {
+  position: relative;
+  padding: 0 20px 22px;
   background: #fff;
   border: 1px solid var(--did-border);
   border-radius: 4px;
 }
 
-.hero-copy h1 {
-  margin: 0;
-  padding: 9px 20px;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 500;
-  background: linear-gradient(to right, #005bd8, #65bfff);
-}
-
-.status-row {
+.actor-switcher {
+  position: absolute;
+  top: 9px;
+  right: 20px;
+  z-index: 3;
   display: flex;
-  flex-wrap: wrap;
   gap: 10px;
-  padding: 16px 20px 8px;
+  align-items: center;
 }
 
-.status-pill {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 12px;
-  color: #4f5e7b;
+.actor-label {
+  flex: 0 0 auto;
+  color: #61718a;
   font-size: 13px;
-  background: #f3f6fb;
-  border: 1px solid #a9c4df;
-  border-radius: 3px;
+  font-weight: 600;
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  background: #94a3b8;
-  border-radius: 50%;
+.actor-select {
+  width: 220px;
 }
 
-.status-pill.online .status-dot { background: #1dc5b3; }
-.status-pill.offline .status-dot { background: #f86359; }
-.status-pill.disabled .status-dot { background: #f5b923; }
-
-.actor-panel {
+.actor-option {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 20px 16px;
+  justify-content: space-between;
+  gap: 18px;
 }
 
-.actor-panel label {
-  flex: 0 0 auto;
-  color: #4f5e7b;
-  font-size: 14px;
-  font-weight: 700;
+.actor-option small {
+  color: #97a5b9;
 }
 
-.refresh-button {
-  flex: 0 0 auto;
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 4px 0 18px;
 }
 
-.workspace-grid {
+.section-heading h2 {
+  margin: 0;
+  color: #2d405e;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 16px;
-  align-items: start;
-  margin-top: 14px;
+  gap: 18px;
+  align-items: stretch;
 }
 
-.operation-panel,
-.result-panel {
-  background: #fff;
-  border: 1px solid var(--did-border);
-  border-radius: 4px;
+.content-grid--wide {
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
 }
 
-.operation-panel { padding: 4px 20px 22px; }
-
-.tab-intro {
-  display: flex;
-  align-items: center;
-  margin: 6px 0 18px;
-  padding: 9px 16px;
-  color: #fff;
-  background: linear-gradient(to right, #005bd8, #65bfff);
+.content-grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-
-.tab-intro h2 { margin: 0; color: #fff; font-size: 18px; font-weight: 500; }
 
 .operation-card {
-  height: calc(100% - 18px);
-  margin-bottom: 18px;
+  height: 100%;
   border-color: #dbe5f1;
 }
 
-.card-title { color: #2d405e; font-weight: 700; }
-.button-row { display: flex; flex-wrap: wrap; gap: 10px; }
-.button-row .el-button { margin-left: 0; }
-.button-stack { display: grid; gap: 10px; }
-.button-stack .el-button { width: 100%; margin-left: 0; }
-.verify-card { height: auto; }
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
 
-.result-panel {
-  position: sticky;
-  top: 0;
-  min-height: 450px;
+.card-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.card-title {
+  color: #2d405e;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.number-badge {
+  flex: 0 0 auto;
+  min-width: 36px;
+  padding: 4px 9px;
+  color: #165ac6;
+  font-size: 12px;
+  text-align: center;
+  background: #eaf3ff;
+  border-radius: 2px;
+}
+
+.number-badge {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #fff;
+  line-height: 24px;
+  background: #7ea9e7;
+  border-radius: 50%;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button-row .el-button,
+.button-stack .el-button {
+  margin-left: 0;
+}
+
+.button-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.button-stack .el-button,
+.full-button {
+  width: 100%;
+}
+
+.card-actions {
+  margin-top: 20px;
+}
+
+.credential-summary {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  background: #e7edf5;
+  border: 1px solid #e7edf5;
+  border-radius: 3px;
+}
+
+.credential-summary div {
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 13px;
+  color: #74849b;
+  font-size: 12px;
+  background: #fbfcfe;
+}
+
+.credential-summary strong {
+  color: #4e607b;
+  font-weight: 500;
+}
+
+.advanced-collapse {
+  margin-top: 2px;
+  border-bottom: 0;
+}
+
+.eligibility-collapse {
+  margin-top: 14px;
+}
+
+.flow-steps {
+  margin: 8px 3% 26px;
+}
+
+.flow-card {
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.flow-card--active {
+  border-color: #80b6f4;
+  box-shadow: 0 4px 14px rgba(45, 105, 190, 0.08);
+}
+
+.flow-card--active .number-badge {
+  background: #165ac6;
+}
+
+.context-chip {
+  margin: 2px 0 14px;
+  padding: 9px 12px;
+  color: #9a7b36;
+  font-size: 12px;
+  text-align: center;
+  background: #fff9e9;
+  border: 1px solid #f4dfad;
+  border-radius: 3px;
+}
+
+.context-chip--ready {
+  color: #168176;
+  background: #eaf9f7;
+  border-color: #afe2db;
+}
+
+.anonymous-anchor {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: 620px;
+  margin: 0 auto 24px;
+  padding: 12px 16px;
+  background: #f6f9fd;
+  border: 1px solid #dbe5f1;
+  border-radius: 4px;
+}
+
+.anonymous-anchor > span:first-child {
+  flex: 0 0 auto;
+  color: #51627c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.approval-box {
+  padding: 16px;
+  background: #f7faff;
+  border: 1px solid #e0e9f4;
+  border-radius: 4px;
+}
+
+.approval-title {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: #5a6e8b;
+  font-size: 13px;
+}
+
+.approval-title strong {
+  color: #165ac6;
+}
+
+.full-select {
+  width: 100%;
+}
+
+.result-card {
+  margin-top: 14px;
   overflow: hidden;
   background: #fff;
-  border-color: var(--did-border);
+  border: 1px solid #b8e2dc;
+  border-radius: 4px;
 }
 
-.result-heading {
+.result-card--error {
+  border-color: #f0c1bd;
+}
+
+.result-summary {
   display: flex;
+  gap: 12px;
   align-items: center;
-  justify-content: space-between;
-  min-height: 40px;
-  padding: 0 14px 0 20px;
-  color: #fff;
-  background: linear-gradient(to right, #005bd8, #65bfff);
+  padding: 15px 18px;
+  background: #f0faf8;
 }
 
-.result-heading h3 { margin: 0; color: #fff; font-size: 18px; font-weight: 500; }
-.result-meta { display: grid; gap: 5px; padding: 14px 16px; color: #71809a; font-size: 12px; border-bottom: 1px solid #e4e7ed; }
-.result-meta code { overflow: hidden; color: #4f5e7b; text-overflow: ellipsis; }
+.result-card--error .result-summary {
+  background: #fff5f4;
+}
 
-.json-viewer {
-  max-height: 610px;
-  margin: 14px;
+.result-icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  color: #fff;
+  font-weight: 700;
+  line-height: 30px;
+  text-align: center;
+  background: #1db4a4;
+  border-radius: 50%;
+}
+
+.result-card--error .result-icon {
+  background: #e66b62;
+}
+
+.result-summary > div:nth-child(2) {
+  min-width: 0;
+}
+
+.result-summary strong {
+  color: #354a69;
+  font-size: 14px;
+}
+
+.result-summary p {
+  margin: 3px 0 0;
+  color: #7a899f;
+  font-size: 12px;
+}
+
+.request-id {
+  margin-left: auto;
+  overflow: hidden;
+  color: #8b99ab;
+  font-family: monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-details {
+  padding: 0 18px;
+  border-top: 1px solid #e5ecf4;
+  border-bottom: 0;
+}
+
+.result-details pre {
+  max-height: 360px;
+  margin: 0;
   padding: 14px;
   overflow: auto;
   color: #4f5e7b;
@@ -642,31 +1652,135 @@ onMounted(() => refreshStatus(false))
   word-break: break-word;
 }
 
-.empty-result {
-  display: grid;
-  min-height: 350px;
-  padding: 20px;
-  place-content: center;
-  text-align: center;
+:deep(.did-tabs > .el-tabs__header) {
+  margin: 0 285px 18px 0;
 }
 
-:deep(.did-tabs > .el-tabs__header) { margin-bottom: 14px; }
-:deep(.did-tabs .el-tabs__item) { height: 52px; color: #61718a; font-weight: 700; }
-:deep(.did-tabs .el-tabs__item.is-active) { color: #165ac6; }
-:deep(.did-tabs .el-tabs__active-bar) { height: 3px; background: #165ac6; }
-:deep(.el-card__header) { padding: 14px 16px; background: #fbfdff; }
-:deep(.el-card__body) { padding: 17px; }
-:deep(.el-form-item__label) { color: #51627c; font-weight: 600; }
-:deep(.el-input-number) { width: 100%; }
-:deep(.actor-panel .el-input) { border: 0; }
-
-@media (max-width: 1280px) {
-  .workspace-grid { grid-template-columns: minmax(0, 1fr); }
-  .result-panel { position: static; min-height: 320px; }
-  .json-viewer { max-height: 400px; }
+:deep(.did-tabs .el-tabs__item) {
+  height: 52px;
+  padding: 0 18px;
+  color: #61718a;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-@media (max-width: 900px) {
-  .actor-panel { flex-wrap: wrap; }
+:deep(.did-tabs .el-tabs__item.is-active) {
+  color: #165ac6;
+}
+
+:deep(.did-tabs .el-tabs__active-bar) {
+  height: 3px;
+  background: #165ac6;
+}
+
+:deep(.el-card__header) {
+  padding: 14px 16px;
+  background: #fbfdff;
+}
+
+:deep(.el-card__body) {
+  padding: 18px;
+}
+
+:deep(.el-form-item__label) {
+  color: #51627c;
+  font-weight: 600;
+}
+
+:deep(.el-input-number) {
+  width: 100%;
+}
+
+:deep(.default-button.is-disabled),
+:deep(.default-button.is-disabled:hover) {
+  color: #9aa8ba !important;
+  background: #edf1f6 !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+}
+
+:deep(.advanced-collapse .el-collapse-item__header) {
+  height: 42px;
+  color: #6f7f96;
+  font-size: 12px;
+}
+
+:deep(.advanced-collapse .el-collapse-item__wrap) {
+  border-bottom: 0;
+}
+
+:deep(.advanced-collapse .el-collapse-item__content) {
+  padding: 4px 0 2px;
+}
+
+:deep(.checkbox-item) {
+  margin-bottom: 0;
+}
+
+:deep(.flow-steps .el-step__title) {
+  color: #455b79;
+  font-size: 14px;
+}
+
+:deep(.flow-steps .el-step__description) {
+  color: #8b99ac;
+  font-size: 12px;
+}
+
+@media (max-width: 1480px) {
+  :deep(.did-tabs .el-tabs__item) {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .content-grid--three {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1160px) {
+  .actor-switcher {
+    position: static;
+    justify-content: flex-end;
+    padding: 12px 0 0;
+  }
+
+  :deep(.did-tabs > .el-tabs__header) {
+    margin-right: 0;
+  }
+
+  .content-grid--wide {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-panel {
+    padding: 0 12px 16px;
+  }
+
+  .actor-switcher,
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .anonymous-anchor {
+    align-items: stretch;
+    flex-direction: column;
+    max-width: none;
+  }
+
+  .actor-select {
+    width: 100%;
+  }
+
+  :deep(.did-tabs .el-tabs__nav-wrap) {
+    overflow-x: auto;
+  }
+
+  .request-id {
+    display: none;
+  }
 }
 </style>
